@@ -1,104 +1,97 @@
 "use client"
 
-import { TrophyIcon, TrendingUpIcon, TrendingDownIcon } from "lucide-react"
+import { TrophyIcon } from "lucide-react"
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 
 interface LeaderboardEntry {
   rank: number
   userId: string
   displayName: string
   points: number
-  correctPredictions: number
-  totalPredictions: number
-  trend: 'up' | 'down' | 'same'
+  totalPicks: number
+  completedPicks: number
   isCurrentUser?: boolean
 }
 
-export function Leaderboard({ currentUserId }: { currentUserId: string }) {
-  // Mock data - in production, this would come from a database
-  const leaderboardData: LeaderboardEntry[] = [
-    {
-      rank: 1,
-      userId: '1',
-      displayName: 'HockeyPro23',
-      points: 245,
-      correctPredictions: 18,
-      totalPredictions: 25,
-      trend: 'up',
-    },
-    {
-      rank: 2,
-      userId: '2',
-      displayName: 'WingsForever',
-      points: 232,
-      correctPredictions: 17,
-      totalPredictions: 25,
-      trend: 'same',
-    },
-    {
-      rank: 3,
-      userId: currentUserId,
-      displayName: 'You',
-      points: 218,
-      correctPredictions: 16,
-      totalPredictions: 25,
-      trend: 'up',
-      isCurrentUser: true,
-    },
-    {
-      rank: 4,
-      userId: '4',
-      displayName: 'DetroitFan88',
-      points: 205,
-      correctPredictions: 15,
-      totalPredictions: 25,
-      trend: 'down',
-    },
-    {
-      rank: 5,
-      userId: '5',
-      displayName: 'IceKing',
-      points: 198,
-      correctPredictions: 14,
-      totalPredictions: 25,
-      trend: 'same',
-    },
-    {
-      rank: 6,
-      userId: '6',
-      displayName: 'PuckMaster',
-      points: 187,
-      correctPredictions: 13,
-      totalPredictions: 25,
-      trend: 'down',
-    },
-    {
-      rank: 7,
-      userId: '7',
-      displayName: 'GoalGetter',
-      points: 175,
-      correctPredictions: 12,
-      totalPredictions: 25,
-      trend: 'up',
-    },
-    {
-      rank: 8,
-      userId: '8',
-      displayName: 'HockeyNut',
-      points: 162,
-      correctPredictions: 11,
-      totalPredictions: 25,
-      trend: 'down',
-    },
-  ]
+interface LeaderboardData {
+  league: {
+    id: string
+    name: string
+    seasonYear: number
+  } | null
+  leaderboard: LeaderboardEntry[]
+}
+
+export function Leaderboard({ currentUserId, leagueId }: { currentUserId: string; leagueId?: string }) {
+  const [data, setData] = useState<LeaderboardData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const router = useRouter()
+
+  useEffect(() => {
+    fetchLeaderboard()
+  }, [leagueId])
+
+  const fetchLeaderboard = async () => {
+    try {
+      const url = leagueId 
+        ? `/api/leaderboard?leagueId=${leagueId}`
+        : '/api/leaderboard'
+      
+      const response = await fetch(url)
+      if (response.ok) {
+        const leaderboardData = await response.json()
+        setData(leaderboardData)
+      }
+    } catch (error) {
+      console.error('Error fetching leaderboard:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="backdrop-blur-xl bg-white/5 p-6 rounded-3xl border border-white/10 shadow-2xl">
+        <h2 className="text-2xl font-bold text-white mb-6 flex items-center">
+          <TrophyIcon className="h-7 w-7 mr-2 text-yellow-400" />
+          League Rankings
+        </h2>
+        <div className="text-center py-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600 mx-auto"></div>
+          <p className="mt-4 text-gray-300">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!data || data.leaderboard.length === 0) {
+    return (
+      <div className="backdrop-blur-xl bg-white/5 p-6 rounded-3xl border border-white/10 shadow-2xl">
+        <h2 className="text-2xl font-bold text-white mb-6 flex items-center">
+          <TrophyIcon className="h-7 w-7 mr-2 text-yellow-400" />
+          League Rankings
+        </h2>
+        <div className="text-center py-8">
+          <p className="text-gray-400">No leaderboard data available.</p>
+          <p className="text-sm text-gray-500 mt-2">Join a league and make picks to see rankings.</p>
+        </div>
+      </div>
+    )
+  }
+
+  const leaderboardData = data.leaderboard
 
   return (
     <div className="backdrop-blur-xl bg-white/5 p-6 rounded-3xl border border-white/10 shadow-2xl">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-white flex items-center">
           <TrophyIcon className="h-7 w-7 mr-2 text-yellow-400" />
-          League Rankings
+          {data.league ? data.league.name : 'Overall'} Rankings
         </h2>
-        <span className="text-sm text-gray-400">Season 2023-24</span>
+        {data.league && (
+          <span className="text-sm text-gray-400">Season {data.league.seasonYear}</span>
+        )}
       </div>
       <div className="space-y-3">
         {leaderboardData.map((entry) => (
@@ -125,24 +118,15 @@ export function Leaderboard({ currentUserId }: { currentUserId: string }) {
                     )}
                   </p>
                   <p className="text-sm text-gray-400">
-                    {entry.correctPredictions}/{entry.totalPredictions} correct
-                    predictions
+                    {entry.completedPicks}/{entry.totalPicks} picks completed
                   </p>
                 </div>
               </div>
-              <div className="flex items-center space-x-4">
-                <div className="text-right">
-                  <p className="text-2xl font-bold text-white">
-                    {entry.points}
-                  </p>
-                  <p className="text-xs text-gray-400">points</p>
-                </div>
-                {entry.trend === 'up' && (
-                  <TrendingUpIcon className="h-5 w-5 text-green-400" />
-                )}
-                {entry.trend === 'down' && (
-                  <TrendingDownIcon className="h-5 w-5 text-red-400" />
-                )}
+              <div className="text-right">
+                <p className="text-2xl font-bold text-white">
+                  {entry.points}
+                </p>
+                <p className="text-xs text-gray-400">points</p>
               </div>
             </div>
           </div>
