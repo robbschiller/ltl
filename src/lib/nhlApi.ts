@@ -184,6 +184,59 @@ export async function getClubScheduleSeason(teamAbbrev: string): Promise<unknown
   return nhlFetch(`${NHL_WEB_BASE}/club-schedule-season/${teamAbbrev}/now`)
 }
 
+/**
+ * Get all games for Red Wings in a season, sorted by date
+ * Returns only regular season games (gameType: 2)
+ */
+export async function getRedWingsSeasonSchedule(season: string): Promise<Game[]> {
+  const schedule = await nhlFetch<any>(`${NHL_WEB_BASE}/club-schedule-season/DET/${season}`)
+  
+  const games: Game[] = []
+  if (schedule.gameWeek) {
+    schedule.gameWeek.forEach((week: any) => {
+      if (week.games) {
+        // Filter for Red Wings games and regular season only (gameType: 2)
+        week.games.forEach((game: Game) => {
+          const isRedWingsGame = game.awayTeam.abbrev === 'DET' || game.homeTeam.abbrev === 'DET'
+          const isRegularSeason = game.gameType === 2
+          if (isRedWingsGame && isRegularSeason) {
+            games.push(game)
+          }
+        })
+      }
+    })
+  }
+  
+  // Sort by date (startTimeUTC)
+  games.sort((a, b) => new Date(a.startTimeUTC).getTime() - new Date(b.startTimeUTC).getTime())
+  
+  return games
+}
+
+/**
+ * Get all games for a team in a season
+ * Returns games sorted by date
+ */
+export async function getTeamSeasonSchedule(teamAbbrev: string, season: string): Promise<Game[]> {
+  // The club-schedule-season endpoint returns the full season schedule
+  const schedule = await nhlFetch<any>(`${NHL_WEB_BASE}/club-schedule-season/${teamAbbrev}/${season}`)
+  
+  // Extract games from the schedule structure
+  const games: Game[] = []
+  if (schedule.gameWeek) {
+    schedule.gameWeek.forEach((week: any) => {
+      if (week.games) {
+        games.push(...week.games)
+      }
+    })
+  }
+  
+  // Sort by date (startTimeUTC)
+  games.sort((a, b) => new Date(a.startTimeUTC).getTime() - new Date(b.startTimeUTC).getTime())
+  
+  return games
+}
+
 // ============================================================================
 // Web API - Gamecenter (Game Details)
 // ============================================================================
@@ -278,6 +331,69 @@ export async function getGoalieSummaryForSeason(
   })
 
   return nhlFetch(`${NHL_STATS_BASE}/en/goalie/summary?${params.toString()}`)
+}
+
+/**
+ * Get team player stats for a season
+ * Returns skater and goalie stats filtered by team
+ */
+export async function getTeamPlayerStats(
+  teamAbbrev: string,
+  seasonId: number,
+  gameTypeId: number = 2
+): Promise<{
+  skaters: Array<{
+    playerId: number
+    goals: number
+    assists: number
+    points: number
+    gamesPlayed: number
+  }>
+  goalies: Array<{
+    playerId: number
+    goals: number
+    assists: number
+    points: number
+    gamesPlayed: number
+  }>
+}> {
+  try {
+    // Get skater stats
+    const skaterParams = new URLSearchParams({
+      limit: '-1',
+      sort: 'points',
+      dir: 'desc',
+      cayenneExp: `seasonId=${seasonId} and gameTypeId=${gameTypeId} and teamAbbrev="${teamAbbrev}"`,
+    })
+
+    const skaterResponse = await nhlFetch<SkaterSummaryResponse>(
+      `${NHL_STATS_BASE}/en/skater/summary?${skaterParams.toString()}`
+    )
+
+    const skaters = (skaterResponse.data || []).map((player) => ({
+      playerId: player.playerId,
+      goals: player.goals || 0,
+      assists: player.assists || 0,
+      points: player.points || 0,
+      gamesPlayed: player.gamesPlayed || 0,
+    }))
+
+    // Goalies don't typically have goals/assists in the same way, but we'll include them
+    // For now, we'll set goalie stats to 0 for goals/assists/points
+    // You might want to fetch goalie-specific stats separately if needed
+    const goalies: Array<{
+      playerId: number
+      goals: number
+      assists: number
+      points: number
+      gamesPlayed: number
+    }> = []
+
+    return { skaters, goalies }
+  } catch (error) {
+    console.error('Error fetching team player stats:', error)
+    return { skaters: [], goalies: [] }
+  }
 }
 
 // ============================================================================

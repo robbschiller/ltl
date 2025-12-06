@@ -13,6 +13,10 @@ interface RosterPlayer {
   name: string
   number: string
   position: string
+  goals?: number
+  assists?: number
+  points?: number
+  gamesPlayed?: number
 }
 
 export default function Dashboard() {
@@ -47,7 +51,15 @@ export default function Dashboard() {
           
           // Update GameContext with real NHL game data if currentGame doesn't match
           if (!currentGame || currentGame.id !== gameData.id) {
-            // GameContext will handle this - we'll update it to sync with NHL API
+            startNextGame(
+              gameData.opponent,
+              gameData.opponentLogo,
+              gameData.date,
+              gameData.time,
+              gameData.venue,
+              gameData.isHome,
+              gameData.nhlGameData,
+            )
           }
         }
       } catch (error) {
@@ -58,7 +70,7 @@ export default function Dashboard() {
     }
 
     fetchGame()
-  }, [currentGame])
+  }, [currentGame, startNextGame])
 
   // Fetch roster from NHL API
   useEffect(() => {
@@ -96,7 +108,7 @@ export default function Dashboard() {
     setIsSimulating(true)
     // Add a small delay for visual feedback
     await new Promise((resolve) => setTimeout(resolve, 500))
-    simulateCurrentGame(roster)
+    await simulateCurrentGame(roster)
     setIsSimulating(false)
   }
 

@@ -72,24 +72,13 @@ export function PickOrder({ currentUserId, roster }: PickOrderProps) {
     (player) => !pickedPlayerIds.includes(player.id),
   )
 
-  // Stats lookup by player ID (season stats for display)
-  const statsMap: Record<string, { goals: number; assists: number; points: number }> = {
-    '1': { goals: 28, assists: 35, points: 63 },
-    '2': { goals: 24, assists: 38, points: 62 },
-    '3': { goals: 32, assists: 28, points: 60 },
-    '4': { goals: 8, assists: 34, points: 42 },
-    '5': { goals: 18, assists: 32, points: 50 },
-    '6': { goals: 15, assists: 22, points: 37 },
-    '7': { goals: 4, assists: 18, points: 22 },
-    '8': { goals: 0, assists: 1, points: 1 },
-    '9': { goals: 12, assists: 19, points: 31 },
-    '10': { goals: 16, assists: 24, points: 40 },
-  }
-
-  // Enhanced roster with stats - merge roster prop with stats
-  const rosterWithStats: (Player & { goals: number; assists: number; points: number })[] = roster.map((player) => ({
+  // Roster already comes with stats from the API, sorted by points
+  // Just ensure we have the right type
+  const rosterWithStats = roster.map((player) => ({
     ...player,
-    ...(statsMap[player.id] || { goals: 0, assists: 0, points: 0 }),
+    goals: (player as any).goals || 0,
+    assists: (player as any).assists || 0,
+    points: (player as any).points || 0,
   }))
 
   return (
@@ -266,10 +255,8 @@ export function PickOrder({ currentUserId, roster }: PickOrderProps) {
             <div className="w-24 text-center">Odds</div>
           </div>
 
-          {/* Player Rows */}
-          {rosterWithStats
-            .sort((a, b) => (b.points || 0) - (a.points || 0))
-            .map((player) => (
+          {/* Player Rows - Already sorted by points from API */}
+          {rosterWithStats.map((player) => (
               <div
                 key={player.id}
                 className="backdrop-blur-xl bg-white/5 p-5 rounded-2xl border border-white/10 hover:bg-white/10 transition-all"

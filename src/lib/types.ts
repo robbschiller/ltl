@@ -3,6 +3,10 @@ export interface Player {
   name: string
   number: string
   position: string
+  goals?: number
+  assists?: number
+  points?: number
+  gamesPlayed?: number
 }
 
 export interface Game {
@@ -19,6 +23,9 @@ export interface Game {
   wentToOT: boolean
   emptyNetGoals: number
   shootoutOccurred: boolean
+  // Optional NHL API fields
+  gameId?: number
+  nhlGameData?: any
 }
 
 export interface GamePlayerStats {

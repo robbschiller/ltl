@@ -25,8 +25,8 @@ interface GameContextType {
   
   // Actions
   makePick: (userId: string, playerId: string | 'team', playerPosition?: string) => void
-  simulateCurrentGame: (roster: Player[]) => void
-  startNextGame: (opponent: string, opponentLogo: string, date: string, time: string, venue: string, isHome: boolean) => void
+  simulateCurrentGame: (roster: Player[]) => Promise<void>
+  startNextGame: (opponent: string, opponentLogo: string, date: string, time: string, venue: string, isHome: boolean, nhlGameData?: any) => void
   getPlayerStatsForGame: (gameId: string, playerId: string) => GameResult['playerStats'][0] | null
   getUserScoreForGame: (userId: string, gameId: string) => number
   getTotalScoreForUser: (userId: string) => number
@@ -225,11 +225,33 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   )
 
   const simulateCurrentGame = useCallback(
-    (roster: Player[]) => {
+    async (roster: Player[]) => {
       if (!currentGame || currentGame.status === 'completed') return
 
-      // Simulate the game
-      const result = simulateGame(roster, currentGame)
+      // Check if we have a real NHL game ID and try to get actual results first
+      let result: GameResult | null = null
+      const nhlGameId = (currentGame as any).gameId || (currentGame as any).nhlGameData?.id
+      
+      if (nhlGameId && typeof window !== 'undefined') {
+        try {
+          // Try to fetch real game results
+          const response = await fetch(`/api/nhl/game-results?gameId=${nhlGameId}`)
+          if (response.ok) {
+            const realResults = await response.json()
+            // Parse real results if game is completed
+            if (realResults.boxscore && realResults.landing) {
+              result = parseRealGameResults(realResults, currentGame, roster)
+            }
+          }
+        } catch (error) {
+          console.log('Game not completed yet or error fetching results, will simulate:', error)
+        }
+      }
+
+      // If no real results, simulate the game
+      if (!result) {
+        result = simulateGame(roster, currentGame)
+      }
 
       // Calculate user scores for this game
       const gamePicks = currentPicks.filter((p) => p.gameId === currentGame.id)
@@ -259,7 +281,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       })
 
       // Save results
-      setGameResults((prev) => [...prev, result])
+      setGameResults((prev) => [...prev, result!])
       setCurrentGame(completedGame)
     },
     [currentGame, currentPicks],
@@ -273,9 +295,12 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       time: string,
       venue: string,
       isHome: boolean,
+      nhlGameData?: any,
     ) => {
+      const gameId = nhlGameData?.id ? String(nhlGameData.id) : `game-${Date.now()}`
+      
       const newGame: Game = {
-        id: `game-${Date.now()}`,
+        id: gameId,
         opponent,
         opponentLogo,
         date,
@@ -288,7 +313,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         wentToOT: false,
         emptyNetGoals: 0,
         shootoutOccurred: false,
-      }
+        ...(nhlGameData && { gameId: nhlGameData.id, nhlGameData }),
+      } as Game
 
       // Clear picks for new game
       setCurrentPicks([])

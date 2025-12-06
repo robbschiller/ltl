@@ -2,68 +2,41 @@
 
 A Next.js fantasy hockey pick 'em game for the Detroit Red Wings. Pick players, simulate games, and compete with friends!
 
-## Tech Stack
+## Quick Start
 
-- **Next.js 16** - React framework with App Router
-- **TypeScript** - Type-safe JavaScript
-- **Tailwind CSS v4** - Utility-first CSS framework
-- **Prisma** - Database ORM with SQLite
-- **NHL API** - Real-time game data and rosters
+Follow these steps to get the app running:
 
-## Prerequisites
+### 1. Install Prerequisites
 
-Before you begin, ensure you have the following installed:
-
+Make sure you have:
 - **Node.js 18+** - [Download here](https://nodejs.org/)
 - **npm** (comes with Node.js) or **yarn**
 - **Git** - [Download here](https://git-scm.com/)
 
-## Step-by-Step Setup
-
-### Step 1: Clone the Repository
+### 2. Clone and Install
 
 ```bash
 git clone <repository-url>
 cd light-the-lamp
-```
-
-### Step 2: Install Dependencies
-
-Install all required npm packages:
-
-```bash
 npm install
 ```
 
-This will install:
-- Next.js and React
-- Prisma and Prisma Client
-- Tailwind CSS
-- TypeScript
-- Lucide React (icons)
-- And other dependencies
-
-### Step 3: Set Up Environment Variables
+### 3. Set Up Environment Variables
 
 Create a `.env` file in the root directory:
 
 ```bash
-# Create .env file
 touch .env
 ```
 
-Add the following to `.env`:
-
+Add to `.env`:
 ```env
-# Database
 DATABASE_URL="file:./dev.db"
 ```
 
-**Note:** The database file will be created automatically in the `prisma/` directory when you run migrations.
+**Note:** The database file will be created automatically when you run migrations.
 
-### Step 4: Set Up the Database
-
-Generate the Prisma Client and run migrations:
+### 4. Set Up Database
 
 ```bash
 # Generate Prisma Client
@@ -73,7 +46,46 @@ npm run prisma:generate
 npm run prisma:migrate
 ```
 
-This will:
+### 5. Start Development Server
+
+```bash
+npm run dev
+```
+
+### 6. Open in Browser
+
+Navigate to [http://localhost:3000](http://localhost:3000)
+
+That's it! The app will automatically fetch tonight's Red Wings game and roster.
+
+---
+
+## Tech Stack
+
+- **Next.js 16** - React framework with App Router
+- **TypeScript** - Type-safe JavaScript
+- **Tailwind CSS v4** - Utility-first CSS framework
+- **Prisma** - Database ORM with SQLite (schema defined, ready for persistence)
+- **NHL API** - Real-time game data, rosters, and player stats
+  - Uses `api-web.nhle.com/v1` for schedules, games, and rosters
+  - Uses `api.nhle.com/stats/rest` for player season statistics
+- **localStorage** - Client-side state persistence (current implementation)
+
+## Detailed Setup Instructions
+
+### What Gets Installed
+
+The `npm install` command installs:
+- Next.js and React
+- Prisma and Prisma Client
+- Tailwind CSS
+- TypeScript
+- Lucide React (icons)
+- And other dependencies
+
+### Database Setup Details
+
+Running `npm run prisma:migrate` will:
 - Create the SQLite database file at `prisma/dev.db`
 - Create all tables (User, Pick, UserScore)
 - Set up indexes and relationships
@@ -84,7 +96,7 @@ This will:
 npx prisma db push
 ```
 
-### Step 5: Verify Database Setup (Optional)
+### Verify Database Setup (Optional)
 
 Open Prisma Studio to view your database:
 
@@ -99,26 +111,6 @@ This opens a web interface at `http://localhost:5555` where you can:
 
 Press `Ctrl+C` to stop Prisma Studio when done.
 
-### Step 6: Start the Development Server
-
-Start the Next.js development server:
-
-```bash
-npm run dev
-```
-
-The app will be available at [http://localhost:3000](http://localhost:3000)
-
-### Step 7: Open in Browser
-
-Open your browser and navigate to:
-
-```
-http://localhost:3000
-```
-
-You should see the Light The Lamp home page!
-
 ## Project Structure
 
 ```
@@ -130,22 +122,30 @@ light-the-lamp/
 ├── src/
 │   ├── app/
 │   │   ├── api/
-│   │   │   └── nhl/           # NHL API routes (game, roster)
+│   │   │   └── nhl/           # NHL API routes
+│   │   │       ├── game/      # Get tonight's game
+│   │   │       ├── roster/    # Get team roster with stats
+│   │   │       ├── season/    # Get season schedule
+│   │   │       └── game-results/  # Get completed game results
 │   │   ├── dashboard/         # Dashboard page
 │   │   ├── login/             # Login page
 │   │   ├── layout.tsx         # Root layout
 │   │   └── page.tsx           # Home page
 │   ├── components/
 │   │   ├── dashboard/         # Dashboard components
+│   │   │   ├── NextGame.tsx   # Game info display
+│   │   │   ├── PickOrder.tsx  # Pick interface with roster stats
+│   │   │   └── GameResults.tsx # Results display
 │   │   └── layout/           # Layout components (Navbar)
 │   ├── contexts/
 │   │   ├── AuthContext.tsx   # Authentication context
-│   │   └── GameContext.tsx   # Game state management
+│   │   └── GameContext.tsx   # Game state management (localStorage)
 │   └── lib/
-│       ├── nhlApi.ts         # NHL API client
+│       ├── nhlApi.ts         # NHL API client utilities
 │       ├── prisma.ts         # Prisma client singleton
-│       ├── gameSimulator.ts  # Game simulation logic
-│       └── types.ts          # TypeScript types
+│       ├── gameSimulator.ts  # Game simulation & scoring logic
+│       ├── parseGameResults.ts  # Parse real NHL game results
+│       └── types.ts          # TypeScript interfaces
 ├── .env                       # Environment variables (create this)
 ├── package.json              # Dependencies and scripts
 ├── next.config.ts            # Next.js configuration
@@ -183,9 +183,29 @@ npx prisma studio                # Open Prisma Studio
 npx prisma format                # Format schema file
 ```
 
+## API Endpoints
+
+### NHL API Routes
+
+- **`GET /api/nhl/game`** - Get tonight's Red Wings game
+  - Returns: Game details, opponent, date, time, venue
+  - Query params: `date` (optional, YYYY-MM-DD format)
+
+- **`GET /api/nhl/roster?team=DET`** - Get team roster with season stats
+  - Returns: Full roster with goals, assists, points for each player
+  - Automatically sorted by points (highest to lowest)
+
+- **`GET /api/nhl/season?season=20252026&gameNumber=1`** - Get season schedule
+  - Returns: All games for the season, or specific game by number
+  - Query params: `season` (optional), `gameNumber` (optional)
+
+- **`GET /api/nhl/game-results?gameId=2025020452`** - Get completed game results
+  - Returns: Boxscore data with player stats for completed games
+  - Used to pull real results instead of simulating
+
 ## Database Schema
 
-The app uses a minimal schema with 3 models:
+The app uses a minimal schema with 3 models (Prisma schema defined, ready for future persistence):
 
 ### User
 - Stores user information (id, name, email)
@@ -201,6 +221,8 @@ The app uses a minimal schema with 3 models:
 ### UserScore
 - Stores cumulative season points per user
 - Updated after each game simulation
+
+**Note:** Currently using `localStorage` for state persistence. The Prisma schema is defined and ready when you want to add database persistence.
 
 ## Troubleshooting
 
@@ -254,7 +276,51 @@ npm run dev
 2. **TypeScript Errors**: Check the terminal for type errors
 3. **Database Changes**: After modifying `schema.prisma`, run `npm run prisma:migrate`
 4. **View Database**: Use `npm run prisma:studio` to inspect data
-5. **API Routes**: Test API routes at `http://localhost:3000/api/nhl/game` and `/api/nhl/roster`
+5. **API Routes**: Test API routes:
+   - `http://localhost:3000/api/nhl/game` - Get tonight's game
+   - `http://localhost:3000/api/nhl/roster?team=DET` - Get roster with stats
+   - `http://localhost:3000/api/nhl/season` - Get season schedule
+   - `http://localhost:3000/api/nhl/game-results?gameId=2025020452` - Get game results
+6. **Clear Game State**: Clear localStorage to reset all game data and scores
+7. **Player Stats**: Roster is automatically sorted by points (highest to lowest)
+
+## Features
+
+### Game Management
+- **Real NHL Game Data**: Automatically fetches tonight's Red Wings game from the NHL API
+- **Real Roster & Stats**: Displays current roster with real season statistics (goals, assists, points)
+- **Game Simulation**: Simulates games with realistic player stats, or uses real results when available
+- **Sequential Game Progression**: Move through games sequentially
+
+### Scoring System
+
+#### Goalies
+- **5 points** for a shutout
+- **3 points** for allowing 1-2 goals
+- **0 points** for 3+ goals against
+- **5 points** per assist
+- Empty netters and shootout goals don't count against goalies
+
+#### Forwards
+- **2 points** per regulation goal
+- **+5 bonus points** for OT goals (7 total for OT goals!)
+- **1 point** per assist
+- Points **doubled** for shorthanded goals/assists
+
+#### Defensemen
+- **3 points** per regulation goal
+- **+5 bonus points** for OT goals (8 total for OT goals!)
+- **1 point** per assist
+- Points **doubled** for shorthanded goals/assists
+
+#### The Team
+- **1 point per goal past 3** (4 goals = 4 points, 5 goals = 5 points, etc.)
+
+### Data Sources
+- **Game Data**: Fetched from NHL Web API (`api-web.nhle.com/v1`)
+- **Player Stats**: Fetched from NHL Stats API (`api.nhle.com/stats/rest`)
+- **Current State**: Uses `localStorage` for game state persistence
+- **Database**: Prisma schema ready for future persistence layer
 
 ## Next Steps
 
@@ -262,8 +328,11 @@ Once the app is running:
 
 1. Navigate to the dashboard
 2. The app will automatically fetch tonight's Red Wings game from the NHL API
-3. The current roster will be loaded automatically
-4. Start making picks and simulating games!
+3. The current roster with real season stats will be loaded automatically
+4. Make picks in order (users take turns selecting players or "The Team")
+5. Simulate the game (or use real results if the game is completed)
+6. View results and cumulative scores
+7. Move to the next game when ready
 
 ## Learn More
 
@@ -271,6 +340,7 @@ Once the app is running:
 - [Prisma Documentation](https://www.prisma.io/docs)
 - [Tailwind CSS Documentation](https://tailwindcss.com/docs)
 - [NHL API Reference](https://github.com/Zmalski/NHL-API-Reference)
+- [NHL Web API Documentation](https://api-web.nhle.com/v1/doc)
 
 ## Support
 
