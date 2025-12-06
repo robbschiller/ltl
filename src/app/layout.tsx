@@ -1,20 +1,11 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+import { AuthProvider } from "@/contexts/AuthContext";
+import { Navbar } from "@/components/layout/Navbar";
 
 export const metadata: Metadata = {
   title: "Light The Lamp",
-  description: "A Next.js application with authentication and dashboard",
+  description: "A Next.js application",
 };
 
 export default function RootLayout({
@@ -24,10 +15,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        {children}
+      <body>
+        <AuthProvider>
+          <Navbar />
+          <div className="pt-16">
+            {children}
+          </div>
+        </AuthProvider>
       </body>
     </html>
   );

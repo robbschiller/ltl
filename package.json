@@ -6,25 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
-    "seed": "tsx prisma/seed.ts"
-  },
-  "prisma": {
-    "seed": "tsx prisma/seed.ts"
+    "lint": "eslint"
   },
   "dependencies": {
-    "@auth/core": "^0.41.0",
-    "@auth/prisma-adapter": "^2.11.0",
-    "@prisma/client": "^6.18.0",
-    "@types/bcryptjs": "^2.4.6",
-    "@types/jsonwebtoken": "^9.0.10",
-    "bcryptjs": "^3.0.2",
-    "dotenv": "^17.2.3",
-    "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.552.0",
     "next": "16.0.0",
-    "next-auth": "^5.0.0-beta.29",
-    "prisma": "^6.18.0",
     "react": "19.2.0",
     "react-dom": "19.2.0"
   },
@@ -36,7 +22,6 @@
     "eslint": "^9",
     "eslint-config-next": "16.0.0",
     "tailwindcss": "^4",
-    "tsx": "^4.20.6",
     "typescript": "^5"
   }
 }
