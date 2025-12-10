@@ -5,6 +5,7 @@ import { useAuth } from './AuthContext'
 import type {
   Game,
   GameResult,
+  GamePlayerStats,
   UserPick,
   UserScore,
   User,
@@ -407,11 +408,11 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         
         // Always create a valid result with stats for all roster players
         // This ensures we can calculate scores for all picks
-        const fallbackStats = roster.length > 0
+        const fallbackStats: GamePlayerStats[] = roster.length > 0
           ? roster.map((p) => ({
               playerId: p.id,
-              goals: [],
-              assists: [],
+              goals: [] as Array<{ isShorthanded: boolean; isOTGoal: boolean }>,
+              assists: [] as Array<{ isShorthanded: boolean }>,
               position: p.position,
             }))
           : []
