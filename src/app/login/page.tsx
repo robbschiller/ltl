@@ -10,12 +10,14 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const router = useRouter()
   const { signIn, signUp } = useAuth()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
+    setError(null)
 
     try {
       if (isSignUp) {
@@ -25,9 +27,9 @@ export default function Login() {
       }
       // Navigate to dashboard after successful authentication
       router.push('/dashboard')
-    } catch (error) {
+    } catch (error: any) {
       console.error('Authentication error:', error)
-      // You can add error handling/display here
+      setError(error.message || 'An error occurred. Please try again.')
     } finally {
       setIsLoading(false)
     }
@@ -59,6 +61,11 @@ export default function Login() {
           </div>
 
           <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+            {error && (
+              <div className="bg-red-500/20 border border-red-500/50 text-red-200 px-4 py-3 rounded-xl text-sm">
+                {error}
+              </div>
+            )}
             <div className="space-y-4">
               {isSignUp && (
                 <div>

@@ -17,6 +17,12 @@ export function simulateGameStats(
   let totalGoals = 0
   let totalAssists = 0
 
+  // Validate roster
+  if (!roster || roster.length === 0) {
+    console.warn('simulateGameStats: Empty roster provided, returning empty stats')
+    return []
+  }
+
   // Determine game outcome first
   const teamGoals = Math.floor(Math.random() * 6) + 1 // 1-6 goals
   const opponentGoals = Math.floor(Math.random() * 6) + 1 // 1-6 goals
@@ -75,9 +81,10 @@ export function simulateGameStats(
     }
   })
 
-  // Aggregate stats per player
+  // Aggregate stats per player - ALWAYS include all roster players
   const statsMap = new Map<string, GamePlayerStats>()
 
+  // Initialize stats for ALL players first
   roster.forEach((player) => {
     statsMap.set(player.id, {
       playerId: player.id,
@@ -108,7 +115,25 @@ export function simulateGameStats(
     }
   })
 
-  return Array.from(statsMap.values())
+  // Always return stats for ALL players, even if they have no goals/assists
+  const allStats = Array.from(statsMap.values())
+  
+  // Double-check: if somehow we're missing players, add them
+  if (allStats.length !== roster.length) {
+    console.warn(`Stats count (${allStats.length}) doesn't match roster size (${roster.length}), adding missing players`)
+    roster.forEach((player) => {
+      if (!statsMap.has(player.id)) {
+        allStats.push({
+          playerId: player.id,
+          goals: [],
+          assists: [],
+          position: player.position,
+        })
+      }
+    })
+  }
+
+  return allStats
 }
 
 /**
@@ -264,8 +289,38 @@ export function simulateGame(
   roster: Player[],
   game: Game,
 ): GameResult {
+  // Validate inputs
+  if (!roster || roster.length === 0) {
+    console.error('simulateGame: Empty roster provided')
+    // Return a minimal valid result
+    return {
+      gameId: game.id,
+      playerStats: [],
+      teamPoints: 0,
+      completedAt: new Date().toISOString(),
+    }
+  }
+
+  if (!game || !game.id) {
+    console.error('simulateGame: Invalid game provided')
+    throw new Error('Invalid game provided to simulateGame')
+  }
+
   // Generate player stats
   const playerStats = simulateGameStats(roster, game)
+
+  // Ensure we have stats for all players (even if empty)
+  if (playerStats.length === 0) {
+    console.warn('simulateGameStats returned empty array, creating empty stats for all players')
+    roster.forEach((player) => {
+      playerStats.push({
+        playerId: player.id,
+        goals: [],
+        assists: [],
+        position: player.position,
+      })
+    })
+  }
 
   // Calculate team points
   const teamPoints = calculateTeamScore(game.teamGoals)

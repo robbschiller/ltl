@@ -1,12 +1,13 @@
 "use client"
 
 import React, { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { useGame } from '@/contexts/GameContext'
 import { NextGame } from '@/components/dashboard/NextGame'
 import { PickOrder } from '@/components/dashboard/PickOrder'
 import { GameResults } from '@/components/dashboard/GameResults'
-import { PlayIcon, ArrowRightIcon, LoaderIcon, RotateCcwIcon } from 'lucide-react'
+import { PlayIcon, ArrowRightIcon, LoaderIcon, TrophyIcon } from 'lucide-react'
 
 interface RosterPlayer {
   id: string
@@ -20,6 +21,7 @@ interface RosterPlayer {
 }
 
 export default function Dashboard() {
+  const router = useRouter()
   const { currentUser } = useAuth()
   const {
     currentGame,
@@ -30,7 +32,6 @@ export default function Dashboard() {
     isLoading,
     simulateCurrentGame,
     startNextGame,
-    resetAllScores,
   } = useGame()
 
   const [isSimulating, setIsSimulating] = useState(false)
@@ -48,6 +49,38 @@ export default function Dashboard() {
         if (response.ok) {
           const gameData = await response.json()
           setNhlGame(gameData)
+          
+          // Test last game API
+          console.log('=== DASHBOARD: Testing Last Game API ===')
+          try {
+            const lastGameResponse = await fetch('/api/nhl/last-game')
+            if (lastGameResponse.ok) {
+              const lastGameData = await lastGameResponse.json()
+              console.log('Last game data:', lastGameData)
+              
+              // Test historical stats API
+              if (lastGameData.gameId) {
+                console.log('=== DASHBOARD: Testing Historical Stats API ===')
+                const statsResponse = await fetch(`/api/nhl/historical-stats?gameId=${lastGameData.gameId}`)
+                if (statsResponse.ok) {
+                  const statsData = await statsResponse.json()
+                  console.log('Historical stats data keys:', Object.keys(statsData))
+                  console.log('Historical stats game:', statsData.game)
+                  console.log('Boxscore available:', !!statsData.boxscore)
+                  console.log('Landing available:', !!statsData.landing)
+                  console.log('PlayByPlay available:', !!statsData.playByPlay)
+                } else {
+                  const errorText = await statsResponse.text()
+                  console.error('Historical stats API error:', statsResponse.status, errorText)
+                }
+              }
+            } else {
+              const errorText = await lastGameResponse.text()
+              console.error('Last game API error:', lastGameResponse.status, errorText)
+            }
+          } catch (error) {
+            console.error('Error testing last game API:', error)
+          }
           
           // Update GameContext with real NHL game data if currentGame doesn't match
           if (!currentGame || currentGame.id !== gameData.id) {
@@ -105,11 +138,28 @@ export default function Dashboard() {
   const handleSimulateGame = async () => {
     if (!currentGame || !allPicksMade) return
 
+    // Ensure roster is loaded
+    if (!roster || roster.length === 0) {
+      console.error('Cannot simulate: roster not loaded yet')
+      alert('Roster is still loading. Please wait a moment and try again.')
+      return
+    }
+
+    console.log('Starting simulation with:', {
+      rosterSize: roster.length,
+      gameId: currentGame.id,
+      picksCount: currentPicks.filter((p) => p.gameId === currentGame.id).length,
+    })
+
     setIsSimulating(true)
     // Add a small delay for visual feedback
     await new Promise((resolve) => setTimeout(resolve, 500))
     await simulateCurrentGame(roster)
     setIsSimulating(false)
+    
+    // Wait a bit for state to update, then navigate to results page
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    router.push('/results')
   }
 
   const handleNextGame = () => {
@@ -135,6 +185,7 @@ export default function Dashboard() {
 
     const opponent = opponents[Math.floor(Math.random() * opponents.length)]
 
+    // Start next game (pick order already rotated after previous game completed)
     startNextGame(
       opponent.name,
       opponent.logo,
@@ -194,7 +245,7 @@ export default function Dashboard() {
                 <div>
                   <p className="text-white font-semibold mb-1">Game Completed</p>
                   <p className="text-sm text-gray-400">
-                    View results below. Ready for the next game?
+                    View results below or see the full results page.
                   </p>
                 </div>
               )}
@@ -224,26 +275,23 @@ export default function Dashboard() {
                 </button>
               )}
               {displayGame?.status === 'completed' && (
-                <button
-                  onClick={handleNextGame}
-                  className="px-6 py-3 rounded-xl font-semibold bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-500/20 transition-all flex items-center gap-2"
-                >
-                  Next Game
-                  <ArrowRightIcon className="h-5 w-5" />
-                </button>
+                <>
+                  <button
+                    onClick={() => router.push('/results')}
+                    className="px-6 py-3 rounded-xl font-semibold bg-yellow-600 hover:bg-yellow-700 text-white shadow-lg shadow-yellow-500/20 transition-all flex items-center gap-2"
+                  >
+                    <TrophyIcon className="h-5 w-5" />
+                    View Results
+                  </button>
+                  <button
+                    onClick={handleNextGame}
+                    className="px-6 py-3 rounded-xl font-semibold bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-500/20 transition-all flex items-center gap-2"
+                  >
+                    Next Game
+                    <ArrowRightIcon className="h-5 w-5" />
+                  </button>
+                </>
               )}
-              <button
-                onClick={() => {
-                  if (confirm('Are you sure you want to reset all scores? This will clear all game history and reset everyone to 0 points.')) {
-                    resetAllScores()
-                  }
-                }}
-                className="px-4 py-3 rounded-xl font-semibold bg-gray-600 hover:bg-gray-700 text-white shadow-lg transition-all flex items-center gap-2"
-                title="Reset all scores to 0"
-              >
-                <RotateCcwIcon className="h-5 w-5" />
-                Reset Scores
-              </button>
             </div>
           </div>
         </div>

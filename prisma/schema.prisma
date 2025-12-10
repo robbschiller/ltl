@@ -14,6 +14,7 @@ model User {
   id        String   @id @default(cuid())
   name      String
   email     String   @unique
+  password  String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -45,4 +46,13 @@ model UserScore {
   updatedAt         DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PickOrder {
+  id        String   @id @default(cuid())
+  userIds   String   // JSON array of user IDs in order
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([id]) // Only one pick order record
 }

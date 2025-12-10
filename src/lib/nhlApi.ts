@@ -14,7 +14,7 @@ const NHL_STATS_BASE = 'https://api.nhle.com/stats/rest'
 /**
  * Generic fetch wrapper for NHL APIs
  */
-async function nhlFetch<T>(url: string, init?: RequestInit): Promise<T> {
+export async function nhlFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
     headers: {

@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, createContext, useContext } from 'react'
+import React, { useState, createContext, useContext, useEffect } from 'react'
 
 interface AuthContextType {
   currentUser: {
@@ -29,25 +29,84 @@ export function useAuth() {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  // Mock user for demo purposes
-  const [currentUser] = useState({
-    uid: 'demo-user-123',
-    displayName: 'Hockey Fan',
-    email: 'demo@example.com',
-  })
+  const [currentUser, setCurrentUser] = useState<{
+    uid: string
+    displayName: string
+    email: string
+  } | null>(null)
+  const [loading, setLoading] = useState(true)
 
-  const [loading] = useState(false)
+  // Check for existing session on mount
+  useEffect(() => {
+    async function checkAuth() {
+      try {
+        const response = await fetch('/api/auth/me')
+        const data = await response.json()
+        if (data.user) {
+          setCurrentUser({
+            uid: data.user.id,
+            displayName: data.user.name,
+            email: data.user.email,
+          })
+        }
+      } catch (error) {
+        console.error('Error checking auth:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    checkAuth()
+  }, [])
 
   async function signUp(email: string, password: string, displayName: string) {
-    // No-op for demo
+    const response = await fetch('/api/auth/signup', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email, password, name: displayName }),
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || 'Failed to sign up')
+    }
+
+    const data = await response.json()
+    setCurrentUser({
+      uid: data.user.id,
+      displayName: data.user.name,
+      email: data.user.email,
+    })
   }
 
   async function signIn(email: string, password: string) {
-    // No-op for demo
+    const response = await fetch('/api/auth/signin', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email, password }),
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || 'Failed to sign in')
+    }
+
+    const data = await response.json()
+    setCurrentUser({
+      uid: data.user.id,
+      displayName: data.user.name,
+      email: data.user.email,
+    })
   }
 
   async function signOut() {
-    // No-op for demo
+    await fetch('/api/auth/signout', {
+      method: 'POST',
+    })
+    setCurrentUser(null)
   }
 
   const value = {

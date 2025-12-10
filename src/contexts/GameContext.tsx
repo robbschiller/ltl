@@ -1,6 +1,7 @@
 "use client"
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { useAuth } from './AuthContext'
 import type {
   Game,
   GameResult,
@@ -13,6 +14,8 @@ import {
   simulateGame,
   calculateUserScores,
 } from '@/lib/gameSimulator'
+import { parseRealGameResults } from '@/lib/parseGameResults'
+import { fetchAndAdaptLastGame } from '@/lib/historicalDataAdapter'
 
 interface GameContextType {
   currentGame: Game | null
@@ -26,7 +29,7 @@ interface GameContextType {
   // Actions
   makePick: (userId: string, playerId: string | 'team', playerPosition?: string) => void
   simulateCurrentGame: (roster: Player[]) => Promise<void>
-  startNextGame: (opponent: string, opponentLogo: string, date: string, time: string, venue: string, isHome: boolean, nhlGameData?: any) => void
+  startNextGame: (opponent: string, opponentLogo: string, date: string, time: string, venue: string, isHome: boolean, nhlGameData?: any, rotateOrder?: boolean) => void
   getPlayerStatsForGame: (gameId: string, playerId: string) => GameResult['playerStats'][0] | null
   getUserScoreForGame: (userId: string, gameId: string) => number
   getTotalScoreForUser: (userId: string) => number
@@ -110,17 +113,101 @@ function saveToStorage<T>(key: string, value: T): void {
 }
 
 export function GameProvider({ children }: { children: React.ReactNode }) {
+  const { currentUser } = useAuth()
   const [isLoading, setIsLoading] = useState(true)
   const [currentGame, setCurrentGame] = useState<Game | null>(null)
   const [currentPicks, setCurrentPicks] = useState<UserPick[]>([])
   const [gameResults, setGameResults] = useState<GameResult[]>([])
   const [userScores, setUserScores] = useState<Map<string, number>>(new Map())
   const [gameUserScores, setGameUserScores] = useState<Map<string, Map<string, number>>>(new Map())
-  const [users, setUsers] = useState<User[]>([
-    { id: '1', name: 'Sarah Johnson' },
-    { id: '2', name: 'Mike Williams' },
-    { id: 'demo-user-123', name: 'You' },
-  ])
+  const [users, setUsers] = useState<User[]>([])
+  
+  // Function to fetch users from database
+  const fetchUsers = useCallback(async () => {
+    try {
+      const response = await fetch('/api/users')
+      if (response.ok) {
+        const data = await response.json()
+        console.log('Fetched users:', data.users?.length || 0)
+        if (data.users && Array.isArray(data.users)) {
+          setUsers(data.users.map((u: any) => ({ id: u.id, name: u.name })))
+          
+          // Also update userScores from database
+          const scoresMap = new Map<string, number>()
+          data.users.forEach((u: any) => {
+            if (u.totalSeasonPoints) {
+              scoresMap.set(u.id, u.totalSeasonPoints)
+            }
+          })
+          setUserScores((prev) => {
+            // Merge with existing scores, keeping game-specific scores from localStorage
+            const merged = new Map(prev)
+            scoresMap.forEach((points, userId) => {
+              merged.set(userId, points)
+            })
+            return merged
+          })
+        } else {
+          console.warn('No users in response:', data)
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({}))
+        console.error('Failed to fetch users:', response.status, errorData)
+      }
+    } catch (error) {
+      console.error('Error fetching users:', error)
+    }
+  }, [])
+
+  // Function to rotate pick order: move first person to the end
+  const rotatePickOrder = useCallback(async () => {
+    try {
+      const orderResponse = await fetch('/api/pick-order')
+      if (orderResponse.ok) {
+        const { userIds } = await orderResponse.json()
+        if (userIds && userIds.length > 0) {
+          // Rotate: move first to end
+          const rotated = [...userIds.slice(1), userIds[0]]
+          
+          // Update the pick order
+          await fetch('/api/pick-order', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ userIds: rotated }),
+          })
+          
+          // Refresh users to get new order
+          fetchUsers()
+          console.log('Pick order rotated successfully')
+        }
+      }
+    } catch (error) {
+      console.error('Error rotating pick order:', error)
+    }
+  }, [fetchUsers])
+
+  // Function to persist scores to database
+  const persistScoresToDatabase = useCallback(async (scores: Map<string, number>) => {
+    try {
+      // Update each user's score in the database
+      const updates = Array.from(scores.entries()).map(([userId, totalPoints]) =>
+        fetch('/api/users/update-score', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ userId, totalSeasonPoints: totalPoints }),
+        })
+      )
+      
+      await Promise.all(updates)
+      console.log('Scores persisted to database')
+    } catch (error) {
+      console.error('Error persisting scores to database:', error)
+    }
+  }, [])
 
   // Load data from localStorage on mount
   useEffect(() => {
@@ -129,7 +216,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     const loadedResults = loadFromStorage<GameResult[]>(STORAGE_KEYS.gameResults, [])
     const loadedScores = loadFromStorage<Map<string, number>>(STORAGE_KEYS.userScores, new Map())
     const loadedGameUserScores = loadFromStorage<Map<string, Map<string, number>>>(STORAGE_KEYS.gameUserScores, new Map())
-    const loadedUsers = loadFromStorage<User[]>(STORAGE_KEYS.users, users)
+    
+    fetchUsers()
 
     // Initialize with default game if none exists
     if (!loadedGame) {
@@ -156,11 +244,25 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
     setCurrentPicks(loadedPicks)
     setGameResults(loadedResults)
+    // Merge database scores with localStorage scores (localStorage takes precedence for game-specific scores)
     setUserScores(loadedScores)
     setGameUserScores(loadedGameUserScores)
-    setUsers(loadedUsers)
     setIsLoading(false)
-  }, [])
+  }, [fetchUsers])
+  
+  // Refresh users when authentication state changes (e.g., after signup)
+  useEffect(() => {
+    if (!isLoading) {
+      fetchUsers()
+    }
+  }, [currentUser, isLoading, fetchUsers])
+  
+  // Also fetch users on initial mount if not already loading
+  useEffect(() => {
+    if (!isLoading && users.length === 0) {
+      fetchUsers()
+    }
+  }, [isLoading, users.length, fetchUsers])
 
   // Save to localStorage whenever state changes
   useEffect(() => {
@@ -228,6 +330,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     async (roster: Player[]) => {
       if (!currentGame || currentGame.status === 'completed') return
 
+      // Validate roster
+      if (!roster || roster.length === 0) {
+        console.error('Cannot simulate game: roster is empty')
+        return
+      }
+
+      console.log('Starting simulation with roster size:', roster.length)
+
       // Check if we have a real NHL game ID and try to get actual results first
       let result: GameResult | null = null
       const nhlGameId = (currentGame as any).gameId || (currentGame as any).nhlGameData?.id
@@ -240,22 +350,146 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             const realResults = await response.json()
             // Parse real results if game is completed
             if (realResults.boxscore && realResults.landing) {
-              result = parseRealGameResults(realResults, currentGame, roster)
+              result = parseRealGameResults(realResults, currentGame, roster, realResults.playByPlay)
             }
           }
         } catch (error) {
-          console.log('Game not completed yet or error fetching results, will simulate:', error)
+          console.log('Game not completed yet or error fetching results, will try historical data:', error)
         }
       }
 
-      // If no real results, simulate the game
-      if (!result) {
-        result = simulateGame(roster, currentGame)
+      // If no real results, try to use historical data from last completed game
+      if (!result && typeof window !== 'undefined') {
+        try {
+          console.log('Attempting to use historical game data for simulation...')
+          const historicalResult = await fetchAndAdaptLastGame(roster, currentGame)
+          if (historicalResult && historicalResult.playerStats && historicalResult.playerStats.length > 0) {
+            console.log('Successfully adapted historical game data:', {
+              playerStats: historicalResult.playerStats.length,
+              teamPoints: historicalResult.teamPoints,
+            })
+            result = historicalResult
+          } else {
+            console.log('Historical data returned empty result, will use random simulation')
+          }
+        } catch (error) {
+          console.log('Failed to fetch historical data, will use random simulation:', error)
+        }
       }
+
+      // If no historical data available, simulate the game randomly
+      if (!result) {
+        console.log('Using random simulation with roster:', roster.length, 'players')
+        try {
+          result = simulateGame(roster, currentGame)
+          if (result && result.playerStats && result.playerStats.length > 0) {
+            console.log('Random simulation complete:', {
+              gameId: result.gameId,
+              playerStats: result.playerStats.length,
+              teamPoints: result.teamPoints,
+            })
+          } else {
+            console.warn('Random simulation returned empty result, will create fallback')
+            result = null
+          }
+        } catch (error) {
+          console.error('Error in random simulation:', error)
+          result = null
+        }
+      }
+
+      // Ensure we have a valid result - create one if needed
+      if (!result || !result.playerStats || result.playerStats.length === 0) {
+        console.log('Creating fallback simulation result', {
+          result: result ? 'exists but empty' : 'null',
+          rosterSize: roster.length,
+        })
+        
+        // Always create a valid result with stats for all roster players
+        // This ensures we can calculate scores for all picks
+        const fallbackStats = roster.length > 0
+          ? roster.map((p) => ({
+              playerId: p.id,
+              goals: [],
+              assists: [],
+              position: p.position,
+            }))
+          : []
+        
+        // Generate some random goals/assists for realism
+        if (roster.length > 0) {
+          const teamGoals = Math.floor(Math.random() * 5) + 2 // 2-6 goals
+          const opponentGoals = Math.floor(Math.random() * 5) + 1 // 1-5 goals
+          
+          currentGame.teamGoals = teamGoals
+          currentGame.opponentGoals = opponentGoals
+          currentGame.wentToOT = teamGoals === opponentGoals
+          currentGame.shootoutOccurred = currentGame.wentToOT && Math.random() > 0.5
+          
+          // Distribute goals randomly
+          for (let i = 0; i < teamGoals; i++) {
+            const randomPlayer = roster[Math.floor(Math.random() * roster.length)]
+            const playerStats = fallbackStats.find((s) => s.playerId === randomPlayer.id)
+            if (playerStats) {
+              playerStats.goals.push({
+                isShorthanded: Math.random() < 0.1,
+                isOTGoal: currentGame.wentToOT && i === teamGoals - 1,
+              })
+            }
+          }
+          
+          // Distribute assists (1-2 per goal)
+          fallbackStats.forEach((stats) => {
+            const goalCount = stats.goals.length
+            for (let i = 0; i < goalCount; i++) {
+              const numAssists = Math.random() < 0.7 ? 1 : 2
+              for (let j = 0; j < numAssists; j++) {
+                const randomPlayer = roster[Math.floor(Math.random() * roster.length)]
+                const assistStats = fallbackStats.find((s) => s.playerId === randomPlayer.id)
+                if (assistStats && assistStats !== stats) {
+                  assistStats.assists.push({
+                    isShorthanded: stats.goals[i]?.isShorthanded || false,
+                  })
+                }
+              }
+            }
+          })
+        }
+        
+        result = {
+          gameId: currentGame.id,
+          playerStats: fallbackStats,
+          teamPoints: currentGame.teamGoals > 3 ? currentGame.teamGoals : 0,
+          completedAt: new Date().toISOString(),
+        }
+        
+        console.log('Fallback result created:', {
+          gameId: result.gameId,
+          playerStats: result.playerStats.length,
+          teamGoals: currentGame.teamGoals,
+          teamPoints: result.teamPoints,
+        })
+      }
+
+      // Ensure result has the correct gameId
+      if (result && result.gameId !== currentGame.id) {
+        result = {
+          ...result,
+          gameId: currentGame.id,
+        }
+      }
+
+      console.log('Simulation result:', {
+        gameId: result?.gameId,
+        playerStatsCount: result?.playerStats?.length || 0,
+        teamPoints: result?.teamPoints,
+      })
 
       // Calculate user scores for this game
       const gamePicks = currentPicks.filter((p) => p.gameId === currentGame.id)
       const scores = calculateUserScores(gamePicks, result, roster, currentGame)
+      
+      console.log('Calculated scores:', Array.from(scores.entries()))
 
       // Update game status
       const completedGame: Game = {
@@ -270,25 +504,41 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         return updated
       })
 
-      // Update cumulative scores
-      setUserScores((prev) => {
-        const updated = new Map(prev)
-        scores.forEach((points, userId) => {
-          const currentTotal = updated.get(userId) || 0
-          updated.set(userId, currentTotal + points)
-        })
-        return updated
+      // Calculate updated scores for persistence
+      const updatedScores = new Map(userScores)
+      scores.forEach((points, userId) => {
+        const currentTotal = updatedScores.get(userId) || 0
+        updatedScores.set(userId, currentTotal + points)
       })
 
+      // Update cumulative scores
+      setUserScores(updatedScores)
+
+      // Persist scores to database
+      await persistScoresToDatabase(updatedScores)
+
       // Save results
-      setGameResults((prev) => [...prev, result!])
+      console.log('Saving game result:', {
+        gameId: result!.gameId,
+        currentGameId: currentGame.id,
+        playerStats: result!.playerStats.length,
+      })
+      setGameResults((prev) => {
+        const updated = [...prev, result!]
+        console.log('Updated gameResults:', updated.length, 'results')
+        return updated
+      })
       setCurrentGame(completedGame)
+      console.log('Game marked as completed:', completedGame.id, completedGame.status)
+
+      // Automatically rotate pick order after game completion
+      await rotatePickOrder()
     },
-    [currentGame, currentPicks],
+    [currentGame, currentPicks, userScores, persistScoresToDatabase, rotatePickOrder, fetchUsers],
   )
 
   const startNextGame = useCallback(
-    (
+    async (
       opponent: string,
       opponentLogo: string,
       date: string,
@@ -296,7 +546,15 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       venue: string,
       isHome: boolean,
       nhlGameData?: any,
+      rotateOrder: boolean = false,
     ) => {
+      // Rotate pick order: move first person to the end (only if explicitly requested)
+      // Note: This is now redundant since rotation happens automatically after game completion,
+      // but keeping it for backward compatibility if needed
+      if (rotateOrder) {
+        await rotatePickOrder()
+      }
+
       const gameId = nhlGameData?.id ? String(nhlGameData.id) : `game-${Date.now()}`
       
       const newGame: Game = {
@@ -320,7 +578,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       setCurrentPicks([])
       setCurrentGame(newGame)
     },
-    [],
+    [fetchUsers],
   )
 
   const getPlayerStatsForGame = useCallback(

@@ -2,14 +2,17 @@ import type { GameResult, GamePlayerStats, Game, Player } from './types'
 
 /**
  * Parse real NHL API boxscore data into our GameResult format
+ * Enhanced to handle play-by-play data for shorthanded goals, OT goals, and empty net goals
  */
 export function parseRealGameResults(
   apiData: any,
   game: Game,
   roster: Player[],
+  playByPlay?: any,
 ): GameResult {
   const boxscore = apiData.boxscore
   const landing = apiData.landing
+  const pbp = playByPlay || apiData.playByPlay
   
   // Extract team scores
   let redWingsScore = 0
@@ -46,6 +49,73 @@ export function parseRealGameResults(
     }
   }
   
+  // Parse play-by-play to extract goal details (shorthanded, OT, empty net)
+  const goalDetails = new Map<number, Array<{
+    playerId: number
+    isShorthanded: boolean
+    isOTGoal: boolean
+    isEmptyNet: boolean
+    period: number
+  }>>()
+  
+  const assistDetails = new Map<number, Array<{
+    playerId: number
+    isShorthanded: boolean
+  }>>()
+  
+  // Parse play-by-play if available
+  if (pbp) {
+    const plays = (pbp as any)?.plays || (pbp as any)?.playsAllPlays || []
+    const redWingsTeamId = game.isHome 
+      ? (boxscoreData?.homeTeam?.id)
+      : (boxscoreData?.awayTeam?.id)
+    
+    plays.forEach((play: any) => {
+      if (play.typeDescKey === 'goal' && play.details?.scoringPlayerId) {
+        const scoringPlayerId = play.details.scoringPlayerId
+        const isRedWingsGoal = play.teamId === redWingsTeamId
+        const period = play.periodDescriptor?.number || 1
+        const isOT = period > 3 || play.periodDescriptor?.periodType === 'OT'
+        const isShorthanded = play.situationCode === 'SH' || play.details?.situationCode === 'SH'
+        const isEmptyNet = play.details?.emptyNet === true || play.details?.emptyNetGoal === true
+        
+        if (isRedWingsGoal) {
+          if (!goalDetails.has(scoringPlayerId)) {
+            goalDetails.set(scoringPlayerId, [])
+          }
+          goalDetails.get(scoringPlayerId)!.push({
+            playerId: scoringPlayerId,
+            isShorthanded,
+            isOTGoal: isOT,
+            isEmptyNet,
+            period,
+          })
+          
+          // Track assists
+          const assistPlayerIds = play.details?.assistPlayerIds || []
+          assistPlayerIds.forEach((assistPlayerId: number) => {
+            if (!assistDetails.has(assistPlayerId)) {
+              assistDetails.set(assistPlayerId, [])
+            }
+            assistDetails.get(assistPlayerId)!.push({
+              playerId: assistPlayerId,
+              isShorthanded,
+            })
+          })
+        }
+      }
+    })
+    
+    // Count empty net goals
+    goalDetails.forEach((goals) => {
+      goals.forEach((goal) => {
+        if (goal.isEmptyNet) {
+          emptyNetGoals++
+        }
+      })
+    })
+  }
+  
   // Parse player stats from boxscore
   const playerStats: GamePlayerStats[] = []
   
@@ -73,39 +143,63 @@ export function parseRealGameResults(
     if (Array.isArray(stats)) {
       stats.forEach((playerStat: any) => {
         if (playerStat.teamId === redWingsTeamId) {
-          // Match player to roster by ID
+          // Match player to roster by ID or name
           const playerId = String(playerStat.playerId)
+          const playerName = `${playerStat.firstName?.default || ''} ${playerStat.lastName?.default || ''}`.trim()
+          
           const rosterPlayer = roster.find(p => {
             // Try to match by NHL player ID if available
             const nhlId = (p as any).playerId || (p as any).id
-            return String(nhlId) === playerId || p.id === playerId
+            if (String(nhlId) === playerId || p.id === playerId) return true
+            // Fallback: match by name
+            if (p.name === playerName) return true
+            // Match by last name if first name differs
+            const pLastName = p.name.split(' ').pop()
+            const statLastName = playerStat.lastName?.default || playerName.split(' ').pop()
+            return pLastName === statLastName
           })
           
           if (rosterPlayer) {
-            // Parse goals
+            // Get goal details from play-by-play if available
             const goals: Array<{ isShorthanded: boolean; isOTGoal: boolean }> = []
             const assists: Array<{ isShorthanded: boolean }> = []
             
-            // Extract goals and assists from player stats
-            // This structure will need to be adapted based on actual API response
             const goalsCount = playerStat.goals || 0
             const assistsCount = playerStat.assists || 0
             
-            // For now, we'll need to check play-by-play or goal details
-            // to determine if goals are shorthanded or OT goals
-            // This is a simplified version - we may need to enhance this
+            // Use play-by-play data if available, otherwise use defaults
+            const pbpGoals = goalDetails.get(playerStat.playerId) || []
+            const pbpAssists = assistDetails.get(playerStat.playerId) || []
             
+            // Map goals with play-by-play details
             for (let i = 0; i < goalsCount; i++) {
-              goals.push({
-                isShorthanded: false, // Will need to parse from play-by-play
-                isOTGoal: wentToOT && i === goalsCount - 1, // Last goal might be OT
-              })
+              const pbpGoal = pbpGoals[i]
+              if (pbpGoal) {
+                goals.push({
+                  isShorthanded: pbpGoal.isShorthanded,
+                  isOTGoal: pbpGoal.isOTGoal,
+                })
+              } else {
+                // Fallback: assume last goal is OT if game went to OT
+                goals.push({
+                  isShorthanded: false,
+                  isOTGoal: wentToOT && i === goalsCount - 1,
+                })
+              }
             }
             
+            // Map assists with play-by-play details
             for (let i = 0; i < assistsCount; i++) {
-              assists.push({
-                isShorthanded: false, // Will need to parse from play-by-play
-              })
+              const pbpAssist = pbpAssists[i]
+              if (pbpAssist) {
+                assists.push({
+                  isShorthanded: pbpAssist.isShorthanded,
+                })
+              } else {
+                assists.push({
+                  isShorthanded: false,
+                })
+              }
             }
             
             playerStats.push({
@@ -120,15 +214,17 @@ export function parseRealGameResults(
     }
   }
   
-  // Calculate team points (1 point per goal past 3)
-  const teamPoints = redWingsScore > 3 ? redWingsScore : 0
-  
-  // Update game with actual scores
-  game.teamGoals = redWingsScore
-  game.opponentGoals = opponentScore
+  // Update game with actual scores (if not already set)
+  if (game.teamGoals === 0 || game.opponentGoals === 0) {
+    game.teamGoals = redWingsScore
+    game.opponentGoals = opponentScore
+  }
   game.wentToOT = wentToOT
   game.shootoutOccurred = shootoutOccurred
   game.emptyNetGoals = emptyNetGoals
+  
+  // Calculate team points (1 point per goal past 3)
+  const teamPoints = game.teamGoals > 3 ? game.teamGoals : 0
   
   return {
     gameId: game.id,

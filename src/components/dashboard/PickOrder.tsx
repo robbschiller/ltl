@@ -62,15 +62,36 @@ export function PickOrder({ currentUserId, roster }: PickOrderProps) {
   const currentPickerIndex = usersWithPicks.findIndex((user) => !user.pick)
   const currentPicker = usersWithPicks[currentPickerIndex]
 
+  // Check if all users have made picks
+  const allPicksMade = users.length > 0 && usersWithPicks.every((user) => user.pick !== null) && !isGameCompleted
+
   // Get already picked player IDs (exclude 'team')
   const pickedPlayerIds = usersWithPicks
     .filter((user) => user.pick && user.pick !== 'team')
     .map((user) => user.pick) as string[]
 
-  // Filter available roster
-  const availableRoster = roster.filter(
-    (player) => !pickedPlayerIds.includes(player.id),
-  )
+  // Check if "team" has been picked
+  const teamPicked = usersWithPicks.some((user) => user.pick === 'team')
+
+  // Identify goalies (Cam Talbot and John Gibson)
+  const goalieNames = ['Cam Talbot', 'John Gibson']
+  const goalieIds = roster
+    .filter((player) => goalieNames.includes(player.name))
+    .map((player) => player.id)
+
+  // Check if any goalie has been picked
+  const goaliePicked = pickedPlayerIds.some((id) => goalieIds.includes(id))
+
+  // Filter available roster - exclude picked players and goalies if a goalie was already picked
+  const availableRoster = roster.filter((player) => {
+    // Exclude if player was already picked
+    if (pickedPlayerIds.includes(player.id)) return false
+    
+    // If a goalie was already picked, exclude all goalies
+    if (goaliePicked && goalieIds.includes(player.id)) return false
+    
+    return true
+  })
 
   // Roster already comes with stats from the API, sorted by points
   // Just ensure we have the right type
@@ -82,7 +103,22 @@ export function PickOrder({ currentUserId, roster }: PickOrderProps) {
   }))
 
   return (
-    <div className="backdrop-blur-xl bg-white/5 p-8 rounded-3xl border border-white/10 shadow-2xl">
+    <div className="backdrop-blur-xl bg-white/5 p-8 rounded-3xl border border-white/10 shadow-2xl relative">
+      {/* Green overlay when all picks are locked */}
+      {allPicksMade && (
+        <div className="absolute inset-0 bg-green-500/20 border-2 border-green-500/50 rounded-3xl z-10 flex items-center justify-center backdrop-blur-sm">
+          <div className="text-center">
+            <div className="flex items-center justify-center gap-3 mb-2">
+              <LockIcon className="h-8 w-8 text-green-400" />
+              <h3 className="text-3xl font-bold text-green-300 uppercase tracking-wide">
+                Picks Locked
+              </h3>
+            </div>
+            <p className="text-green-200 text-sm">All users have made their selections</p>
+          </div>
+        </div>
+      )}
+      
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2 bg-white/5 p-1 rounded-xl border border-white/10">
           <button
@@ -120,7 +156,12 @@ export function PickOrder({ currentUserId, roster }: PickOrderProps) {
 
       {activeTab === 'picks' ? (
         <div className="space-y-3">
-          {usersWithPicks.map((user, index) => {
+          {usersWithPicks.length === 0 ? (
+            <div className="text-center py-8 text-gray-400">
+              <p>No users found. Please refresh the page.</p>
+            </div>
+          ) : (
+            usersWithPicks.map((user, index) => {
             const selectedPlayer = user.pick && user.pick !== 'team' 
               ? roster.find((p) => p.id === user.pick) 
               : null
@@ -224,9 +265,11 @@ export function PickOrder({ currentUserId, roster }: PickOrderProps) {
                         <option value="" className="bg-gray-900">
                           Select player...
                         </option>
-                        <option value="team" className="bg-gray-900">
-                          The Team
-                        </option>
+                        {!teamPicked && (
+                          <option value="team" className="bg-gray-900">
+                            The Team
+                          </option>
+                        )}
                         {availableRoster.map((player) => (
                           <option
                             key={player.id}
@@ -242,7 +285,7 @@ export function PickOrder({ currentUserId, roster }: PickOrderProps) {
                 </div>
               </div>
             )
-          })}
+          }))}
         </div>
       ) : (
         <div className="space-y-2">
