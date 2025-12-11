@@ -6,10 +6,9 @@ export DATABASE_URL=${DATABASE_URL:-$POSTGRES_PRISMA_URL}
 
 echo "Resolving migration state..."
 
-# Mark failed SQLite migration as rolled back
-npx prisma migrate resolve --rolled-back 20251206211710_init 2>/dev/null || true
-
-# Mark SQLite migrations as applied (they're not needed - PostgreSQL migration handles everything)
+# Mark ALL SQLite migrations as applied (they're not needed - PostgreSQL migration handles everything)
+# This tells Prisma to skip them and only apply the PostgreSQL migration
+npx prisma migrate resolve --applied 20251206211710_init 2>/dev/null || true
 npx prisma migrate resolve --applied 20251210022006_add_password_to_user 2>/dev/null || true
 npx prisma migrate resolve --applied 20251210023629_add_pick_order 2>/dev/null || true
 
