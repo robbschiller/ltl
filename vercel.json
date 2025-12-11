@@ -1,18 +1,3 @@
-{
-  "crons": [
-    {
-      "path": "/api/cron/update-game-status",
-      "schedule": "*/5 * * * *"
-    },
-    {
-      "path": "/api/cron/sync-player-performance",
-      "schedule": "*/15 * * * *"
-    },
-    {
-      "path": "/api/cron/calculate-points",
-      "schedule": "*/15 * * * *"
-    }
-  ]
-}
+{}
 
 
