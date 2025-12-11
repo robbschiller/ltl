@@ -131,7 +131,8 @@ export interface Player {
     default: string
   }
   sweaterNumber: number | null
-  position: string
+  position?: string
+  positionCode?: string
   birthDate?: string
 }
 
@@ -143,19 +144,10 @@ export interface RosterResponse {
 
 /**
  * Get current roster for a team (by abbreviation: DET, SEA, etc.)
- * Note: Uses season format (e.g., 20242025) as /current may redirect
+ * Uses the /current endpoint which automatically returns the current season roster
  */
 export async function getTeamRosterCurrent(teamAbbrev: string): Promise<RosterResponse> {
-  // Get current season (format: YYYY(YYYY+1), e.g., 20242025 for 2024-25 season)
-  // NHL season starts in October (month 9), so if month >= 9, we're in the new season
-  const now = new Date()
-  const currentYear = now.getFullYear()
-  const month = now.getMonth() // 0-11, where 9 = October
-  const seasonStartYear = month >= 9 ? currentYear : currentYear - 1
-  const seasonEndYear = seasonStartYear + 1
-  const season = `${seasonStartYear}${seasonEndYear}` // Full 4-digit year
-  
-  return nhlFetch(`${NHL_WEB_BASE}/roster/${teamAbbrev}/${season}`)
+  return nhlFetch(`${NHL_WEB_BASE}/roster/${teamAbbrev}/current`)
 }
 
 /**
@@ -182,6 +174,35 @@ export async function getClubStatsNow(teamAbbrev: string): Promise<unknown> {
  */
 export async function getClubScheduleSeason(teamAbbrev: string): Promise<unknown> {
   return nhlFetch(`${NHL_WEB_BASE}/club-schedule-season/${teamAbbrev}/now`)
+}
+
+/**
+ * Get current season schedule for Red Wings
+ * Uses /now endpoint to get current season
+ */
+export async function getRedWingsCurrentSeasonSchedule(): Promise<Game[]> {
+  const schedule = await nhlFetch<any>(`${NHL_WEB_BASE}/club-schedule-season/DET/now`)
+  
+  const games: Game[] = []
+  if (schedule.gameWeek) {
+    schedule.gameWeek.forEach((week: any) => {
+      if (week.games) {
+        // Filter for Red Wings games and regular season only (gameType: 2)
+        week.games.forEach((game: Game) => {
+          const isRedWingsGame = game.awayTeam.abbrev === 'DET' || game.homeTeam.abbrev === 'DET'
+          const isRegularSeason = game.gameType === 2
+          if (isRedWingsGame && isRegularSeason) {
+            games.push(game)
+          }
+        })
+      }
+    })
+  }
+  
+  // Sort by date (startTimeUTC)
+  games.sort((a, b) => new Date(a.startTimeUTC).getTime() - new Date(b.startTimeUTC).getTime())
+  
+  return games
 }
 
 /**

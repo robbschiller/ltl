@@ -339,27 +339,69 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
       console.log('Starting simulation with roster size:', roster.length)
 
-      // Check if we have a real NHL game ID and try to get actual results first
+      // First, try to get the last completed game's boxscore (as per user request)
       let result: GameResult | null = null
-      const nhlGameId = (currentGame as any).gameId || (currentGame as any).nhlGameData?.id
       
-      if (nhlGameId && typeof window !== 'undefined') {
+      if (typeof window !== 'undefined') {
         try {
-          // Try to fetch real game results
-          const response = await fetch(`/api/nhl/game-results?gameId=${nhlGameId}`)
+          console.log('Fetching last completed game boxscore...')
+          const response = await fetch('/api/nhl/last-game-boxscore')
           if (response.ok) {
-            const realResults = await response.json()
-            // Parse real results if game is completed
-            if (realResults.boxscore && realResults.landing) {
-              result = parseRealGameResults(realResults, currentGame, roster, realResults.playByPlay)
+            const lastGameData = await response.json()
+            console.log('Got last game data:', {
+              gameId: lastGameData.gameId,
+              hasBoxscore: !!lastGameData.boxscore,
+              hasPlayByPlay: !!lastGameData.playByPlay,
+            })
+            
+            // Parse the real game results
+            if (lastGameData.boxscore) {
+              result = parseRealGameResults(
+                {
+                  boxscore: lastGameData.boxscore,
+                  landing: lastGameData.boxscore, // Use boxscore as landing if separate landing not available
+                  playByPlay: lastGameData.playByPlay,
+                },
+                currentGame,
+                roster,
+                lastGameData.playByPlay
+              )
+              console.log('Successfully parsed last game boxscore:', {
+                playerStats: result?.playerStats?.length || 0,
+                teamPoints: result?.teamPoints,
+              })
             }
+          } else {
+            const errorText = await response.text()
+            console.log('Last game boxscore not available:', response.status, errorText)
           }
         } catch (error) {
-          console.log('Game not completed yet or error fetching results, will try historical data:', error)
+          console.log('Error fetching last game boxscore, will try current game:', error)
         }
       }
 
-      // If no real results, try to use historical data from last completed game
+      // Fallback: Check if we have a real NHL game ID for the current game and try to get actual results
+      if (!result) {
+        const nhlGameId = (currentGame as any).gameId || (currentGame as any).nhlGameData?.id
+        
+        if (nhlGameId && typeof window !== 'undefined') {
+          try {
+            // Try to fetch real game results for current game
+            const response = await fetch(`/api/nhl/game-results?gameId=${nhlGameId}`)
+            if (response.ok) {
+              const realResults = await response.json()
+              // Parse real results if game is completed
+              if (realResults.boxscore && realResults.landing) {
+                result = parseRealGameResults(realResults, currentGame, roster, realResults.playByPlay)
+              }
+            }
+          } catch (error) {
+            console.log('Current game not completed yet or error fetching results, will try historical data:', error)
+          }
+        }
+      }
+
+      // If no real results, try to use historical data from last completed game (old method)
       if (!result && typeof window !== 'undefined') {
         try {
           console.log('Attempting to use historical game data for simulation...')

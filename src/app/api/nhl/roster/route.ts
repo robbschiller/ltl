@@ -42,8 +42,8 @@ export async function GET(request: Request) {
     ]
     
     const formattedRoster = allPlayers.map((player: Player) => {
-      // Determine position abbreviation
-      let position = player.position || 'F'
+      // Determine position abbreviation - use positionCode if available, otherwise infer from roster category
+      let position = player.positionCode || player.position || 'F'
       if (!position && rosterData.goalies.includes(player)) {
         position = 'G'
       } else if (!position && rosterData.defensemen.includes(player)) {
