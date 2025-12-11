@@ -244,7 +244,26 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     }
 
     setCurrentPicks(loadedPicks)
-    setGameResults(loadedResults)
+    
+    // Filter out any gameResults that don't have playerStats (corrupted data)
+    const validGameResults = loadedResults.filter((result) => {
+      if (!result.playerStats || result.playerStats.length === 0) {
+        console.warn('[GAME-CONTEXT] Filtering out invalid gameResult (no playerStats):', {
+          gameId: result.gameId,
+          resultKeys: Object.keys(result),
+        })
+        return false
+      }
+      return true
+    })
+    
+    if (validGameResults.length !== loadedResults.length) {
+      console.warn(`[GAME-CONTEXT] Filtered out ${loadedResults.length - validGameResults.length} invalid gameResults`)
+      // Save the cleaned results back to localStorage
+      saveToStorage(STORAGE_KEYS.gameResults, validGameResults)
+    }
+    
+    setGameResults(validGameResults)
     // Merge database scores with localStorage scores (localStorage takes precedence for game-specific scores)
     setUserScores(loadedScores)
     setGameUserScores(loadedGameUserScores)
@@ -337,181 +356,84 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         return
       }
 
-      console.log('Starting simulation with roster size:', roster.length)
+      console.log('[SIMULATE] Starting - fetching last Red Wings game...')
 
-      // First, try to get the last completed game's boxscore (as per user request)
+      // Get the last completed Red Wings game and use its player stats
       let result: GameResult | null = null
+      let updatedGameValues: Partial<Game> | null = null
       
       if (typeof window !== 'undefined') {
         try {
-          console.log('Fetching last completed game boxscore...')
           const response = await fetch('/api/nhl/last-game-boxscore')
-          if (response.ok) {
-            const lastGameData = await response.json()
-            console.log('Got last game data:', {
-              gameId: lastGameData.gameId,
-              hasBoxscore: !!lastGameData.boxscore,
-              hasPlayByPlay: !!lastGameData.playByPlay,
-            })
-            
-            // Parse the real game results
-            if (lastGameData.boxscore) {
-              result = parseRealGameResults(
-                {
-                  boxscore: lastGameData.boxscore,
-                  landing: lastGameData.boxscore, // Use boxscore as landing if separate landing not available
-                  playByPlay: lastGameData.playByPlay,
-                },
-                currentGame,
-                roster,
-                lastGameData.playByPlay
-              )
-              console.log('Successfully parsed last game boxscore:', {
-                playerStats: result?.playerStats?.length || 0,
-                teamPoints: result?.teamPoints,
-              })
-            }
-          } else {
+          
+          if (!response.ok) {
             const errorText = await response.text()
-            console.log('Last game boxscore not available:', response.status, errorText)
+            console.error('[SIMULATE] Failed to fetch:', response.status, errorText)
+            alert('Failed to fetch last game data. Please try again.')
+            return
           }
-        } catch (error) {
-          console.log('Error fetching last game boxscore, will try current game:', error)
-        }
-      }
-
-      // Fallback: Check if we have a real NHL game ID for the current game and try to get actual results
-      if (!result) {
-        const nhlGameId = (currentGame as any).gameId || (currentGame as any).nhlGameData?.id
-        
-        if (nhlGameId && typeof window !== 'undefined') {
-          try {
-            // Try to fetch real game results for current game
-            const response = await fetch(`/api/nhl/game-results?gameId=${nhlGameId}`)
-            if (response.ok) {
-              const realResults = await response.json()
-              // Parse real results if game is completed
-              if (realResults.boxscore && realResults.landing) {
-                result = parseRealGameResults(realResults, currentGame, roster, realResults.playByPlay)
-              }
-            }
-          } catch (error) {
-            console.log('Current game not completed yet or error fetching results, will try historical data:', error)
+          
+          const lastGameData = await response.json()
+          
+          if (!lastGameData.boxscore) {
+            console.error('[SIMULATE] No boxscore data')
+            alert('No boxscore data available for the last game.')
+            return
           }
-        }
-      }
-
-      // If no real results, try to use historical data from last completed game (old method)
-      if (!result && typeof window !== 'undefined') {
-        try {
-          console.log('Attempting to use historical game data for simulation...')
-          const historicalResult = await fetchAndAdaptLastGame(roster, currentGame)
-          if (historicalResult && historicalResult.playerStats && historicalResult.playerStats.length > 0) {
-            console.log('Successfully adapted historical game data:', {
-              playerStats: historicalResult.playerStats.length,
-              teamPoints: historicalResult.teamPoints,
+          
+          // Create a game object from the schedule game data for accurate scores
+          const scheduleGame = lastGameData.game
+          const isHome = scheduleGame?.homeTeam?.abbrev === 'DET'
+          const gameForParsing: Game = {
+            ...currentGame,
+            isHome: isHome,
+            teamGoals: lastGameData.scores?.redWingsScore || 0,
+            opponentGoals: lastGameData.scores?.opponentScore || 0,
+          }
+          
+          result = parseRealGameResults(
+            {
+              boxscore: lastGameData.boxscore,
+              landing: lastGameData.boxscore,
+              playByPlay: lastGameData.playByPlay,
+              game: scheduleGame,
+            },
+            gameForParsing,
+            roster,
+            lastGameData.playByPlay
+          )
+          
+          if (!result || !result.playerStats || result.playerStats.length === 0) {
+            console.error('[SIMULATE] ERROR: No player stats!', {
+              hasResult: !!result,
+              playerStatsLength: result?.playerStats?.length || 0,
             })
-            result = historicalResult
-          } else {
-            console.log('Historical data returned empty result, will use random simulation')
-          }
-        } catch (error) {
-          console.log('Failed to fetch historical data, will use random simulation:', error)
-        }
-      }
-
-      // If no historical data available, simulate the game randomly
-      if (!result) {
-        console.log('Using random simulation with roster:', roster.length, 'players')
-        try {
-          result = simulateGame(roster, currentGame)
-          if (result && result.playerStats && result.playerStats.length > 0) {
-            console.log('Random simulation complete:', {
-              gameId: result.gameId,
-              playerStats: result.playerStats.length,
-              teamPoints: result.teamPoints,
-            })
-          } else {
-            console.warn('Random simulation returned empty result, will create fallback')
-            result = null
-          }
-        } catch (error) {
-          console.error('Error in random simulation:', error)
-          result = null
-        }
-      }
-
-      // Ensure we have a valid result - create one if needed
-      if (!result || !result.playerStats || result.playerStats.length === 0) {
-        console.log('Creating fallback simulation result', {
-          result: result ? 'exists but empty' : 'null',
-          rosterSize: roster.length,
-        })
-        
-        // Always create a valid result with stats for all roster players
-        // This ensures we can calculate scores for all picks
-        const fallbackStats: GamePlayerStats[] = roster.length > 0
-          ? roster.map((p) => ({
-              playerId: p.id,
-              goals: [] as Array<{ isShorthanded: boolean; isOTGoal: boolean }>,
-              assists: [] as Array<{ isShorthanded: boolean }>,
-              position: p.position,
-            }))
-          : []
-        
-        // Generate some random goals/assists for realism
-        if (roster.length > 0) {
-          const teamGoals = Math.floor(Math.random() * 5) + 2 // 2-6 goals
-          const opponentGoals = Math.floor(Math.random() * 5) + 1 // 1-5 goals
-          
-          currentGame.teamGoals = teamGoals
-          currentGame.opponentGoals = opponentGoals
-          currentGame.wentToOT = teamGoals === opponentGoals
-          currentGame.shootoutOccurred = currentGame.wentToOT && Math.random() > 0.5
-          
-          // Distribute goals randomly
-          for (let i = 0; i < teamGoals; i++) {
-            const randomPlayer = roster[Math.floor(Math.random() * roster.length)]
-            const playerStats = fallbackStats.find((s) => s.playerId === randomPlayer.id)
-            if (playerStats) {
-              playerStats.goals.push({
-                isShorthanded: Math.random() < 0.1,
-                isOTGoal: currentGame.wentToOT && i === teamGoals - 1,
-              })
-            }
+            alert('No player stats found in the last game data.')
+            return
           }
           
-          // Distribute assists (1-2 per goal)
-          fallbackStats.forEach((stats) => {
-            const goalCount = stats.goals.length
-            for (let i = 0; i < goalCount; i++) {
-              const numAssists = Math.random() < 0.7 ? 1 : 2
-              for (let j = 0; j < numAssists; j++) {
-                const randomPlayer = roster[Math.floor(Math.random() * roster.length)]
-                const assistStats = fallbackStats.find((s) => s.playerId === randomPlayer.id)
-                if (assistStats && assistStats !== stats) {
-                  assistStats.assists.push({
-                    isShorthanded: stats.goals[i]?.isShorthanded || false,
-                  })
-                }
-              }
-            }
+          // Store the updated game values to use later
+          updatedGameValues = {
+            teamGoals: gameForParsing.teamGoals,
+            opponentGoals: gameForParsing.opponentGoals,
+            wentToOT: gameForParsing.wentToOT,
+            shootoutOccurred: gameForParsing.shootoutOccurred,
+            emptyNetGoals: gameForParsing.emptyNetGoals,
+          }
+          
+          console.log('[SIMULATE] Success:', {
+            playerStats: result.playerStats.length,
+            teamPoints: result.teamPoints,
+            scores: updatedGameValues,
           })
+        } catch (error) {
+          console.error('[SIMULATE] Error:', error)
+          alert('Error fetching last game data. Please try again.')
+          return
         }
-        
-        result = {
-          gameId: currentGame.id,
-          playerStats: fallbackStats,
-          teamPoints: currentGame.teamGoals > 3 ? currentGame.teamGoals : 0,
-          completedAt: new Date().toISOString(),
-        }
-        
-        console.log('Fallback result created:', {
-          gameId: result.gameId,
-          playerStats: result.playerStats.length,
-          teamGoals: currentGame.teamGoals,
-          teamPoints: result.teamPoints,
-        })
+      } else {
+        console.error('[SIMULATE] Cannot fetch: window undefined')
+        return
       }
 
       // Ensure result has the correct gameId
@@ -522,23 +444,22 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      console.log('Simulation result:', {
-        gameId: result?.gameId,
-        playerStatsCount: result?.playerStats?.length || 0,
-        teamPoints: result?.teamPoints,
-      })
-
       // Calculate user scores for this game
       const gamePicks = currentPicks.filter((p) => p.gameId === currentGame.id)
       const scores = calculateUserScores(gamePicks, result, roster, currentGame)
-      
-      console.log('Calculated scores:', Array.from(scores.entries()))
 
-      // Update game status
+      // Update game status - use the updated game values if we have them
       const completedGame: Game = {
         ...currentGame,
         status: 'completed',
+        ...(updatedGameValues || {}),
       }
+      
+      console.log('Completed game scores:', {
+        teamGoals: completedGame.teamGoals,
+        opponentGoals: completedGame.opponentGoals,
+        wentToOT: completedGame.wentToOT,
+      })
 
       // Store scores for this game
       setGameUserScores((prev) => {
@@ -560,19 +481,35 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       // Persist scores to database
       await persistScoresToDatabase(updatedScores)
 
-      // Save results
-      console.log('Saving game result:', {
-        gameId: result!.gameId,
-        currentGameId: currentGame.id,
-        playerStats: result!.playerStats.length,
-      })
+      // Verify result has player stats before saving
+      if (!result || !result.playerStats || result.playerStats.length === 0) {
+        console.error('[SIMULATE] ERROR: Result has no player stats!', {
+          hasResult: !!result,
+          playerStatsLength: result?.playerStats?.length || 0,
+          resultKeys: result ? Object.keys(result) : [],
+        })
+        alert('Error: No player stats found in game result. Please try again.')
+        return
+      }
+
+      // Save results - verify player stats are included
+      const resultToSave = {
+        ...result,
+        playerStats: result.playerStats, // Explicitly ensure playerStats is included
+      }
+      
+      console.log('[SIMULATE] Saving result with', resultToSave.playerStats.length, 'player stats')
+      
       setGameResults((prev) => {
-        const updated = [...prev, result!]
-        console.log('Updated gameResults:', updated.length, 'results')
+        const updated = [...prev, resultToSave]
+        // Verify it was saved correctly
+        const saved = updated.find(r => r.gameId === resultToSave.gameId)
+        if (saved) {
+          console.log('[SIMULATE] Verified saved result has', saved.playerStats?.length || 0, 'player stats')
+        }
         return updated
       })
       setCurrentGame(completedGame)
-      console.log('Game marked as completed:', completedGame.id, completedGame.status)
 
       // Automatically rotate pick order after game completion
       await rotatePickOrder()

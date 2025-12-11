@@ -179,12 +179,25 @@ export async function getClubScheduleSeason(teamAbbrev: string): Promise<unknown
 /**
  * Get current season schedule for Red Wings
  * Uses /now endpoint to get current season
+ * Handles both response structures: direct `games` array or `gameWeek` structure
  */
 export async function getRedWingsCurrentSeasonSchedule(): Promise<Game[]> {
   const schedule = await nhlFetch<any>(`${NHL_WEB_BASE}/club-schedule-season/DET/now`)
   
   const games: Game[] = []
-  if (schedule.gameWeek) {
+  
+  // Handle direct games array (newer API structure)
+  if (Array.isArray(schedule.games)) {
+    schedule.games.forEach((game: Game) => {
+      const isRedWingsGame = game.awayTeam.abbrev === 'DET' || game.homeTeam.abbrev === 'DET'
+      const isRegularSeason = game.gameType === 2
+      if (isRedWingsGame && isRegularSeason) {
+        games.push(game)
+      }
+    })
+  } 
+  // Handle gameWeek structure (older API structure)
+  else if (schedule.gameWeek) {
     schedule.gameWeek.forEach((week: any) => {
       if (week.games) {
         // Filter for Red Wings games and regular season only (gameType: 2)
@@ -282,6 +295,23 @@ export interface LandingResponse {
  */
 export async function getGameBoxscore(gameId: number): Promise<BoxscoreResponse> {
   return nhlFetch(`${NHL_WEB_BASE}/gamecenter/${gameId}/boxscore`)
+}
+
+/**
+ * Fetch boxscore from NHL API with revalidation
+ * Simple helper for server-side usage
+ */
+export async function fetchBoxscore(gameId: string | number) {
+  const res = await fetch(`${NHL_WEB_BASE}/gamecenter/${gameId}/boxscore`, {
+    // keep it simple; you can add caching later if you want
+    next: { revalidate: 60 },
+  })
+
+  if (!res.ok) {
+    throw new Error(`NHL boxscore error ${res.status} for game ${gameId}`)
+  }
+
+  return res.json()
 }
 
 /**

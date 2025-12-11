@@ -3,14 +3,12 @@
 import React, { useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useGame } from '@/contexts/GameContext'
-import { useAuth } from '@/contexts/AuthContext'
 import { TrophyIcon, ArrowLeftIcon, TargetIcon } from 'lucide-react'
-import { calculatePlayerScore, calculateTeamScore, calculateUserScores } from '@/lib/gameSimulator'
-import type { GameResult, UserPick, Player } from '@/lib/types'
+import { calculatePlayerScore, calculateUserScores } from '@/lib/gameSimulator'
+import type { Player } from '@/lib/types'
 
 export default function ResultsPage() {
   const router = useRouter()
-  const { currentUser } = useAuth()
   const {
     currentGame,
     gameResults,
@@ -53,7 +51,17 @@ export default function ResultsPage() {
 
   const gameResult = useMemo(() => {
     if (!completedGame) return null
-    return gameResults.find((r) => r.gameId === completedGame.id) || null
+    const result = gameResults.find((r) => r.gameId === completedGame.id) || null
+    
+    // Validate that the result has playerStats
+    if (result && (!result.playerStats || result.playerStats.length === 0)) {
+      console.warn('[RESULTS] Found gameResult but it has no playerStats. This might be corrupted data.', {
+        gameId: result.gameId,
+        resultKeys: Object.keys(result),
+      })
+    }
+    
+    return result
   }, [completedGame, gameResults])
 
   const gamePicks = useMemo(() => {
@@ -85,17 +93,35 @@ export default function ResultsPage() {
     fetchRoster()
   }, [])
 
-  // Debug logging - must be before any conditional returns
+  // Recalculate user scores from game result to ensure accuracy
+  // This ensures all users who made picks are shown with correct points
+  const recalculatedScores = useMemo(() => {
+    if (!gameResult || !completedGame || gamePicks.length === 0) {
+      return new Map<string, number>()
+    }
+    // Use the calculateUserScores function to get accurate scores
+    return calculateUserScores(gamePicks, gameResult, roster, completedGame)
+  }, [gameResult, completedGame, gamePicks, roster])
+
+  // Debug logging - only log if there's an issue
   React.useEffect(() => {
-    console.log('Results Page Debug:', {
-      currentGame,
-      gameResults: gameResults.length,
-      completedGame,
-      gameResult,
-      gamePicks: gamePicks.length,
-      gameScores: gameScores.size,
-    })
-  }, [currentGame, gameResults, completedGame, gameResult, gamePicks, gameScores])
+    if (gameResult && (!gameResult.playerStats || gameResult.playerStats.length === 0)) {
+      console.error('[RESULTS] ERROR: Game result has no player stats!', {
+        gameId: gameResult.gameId,
+        gameResultKeys: Object.keys(gameResult),
+        hasPlayerStats: !!gameResult.playerStats,
+        playerStatsLength: gameResult.playerStats?.length || 0,
+        playerStatsType: typeof gameResult.playerStats,
+        rosterSize: roster.length,
+        gameResultsLength: gameResults.length,
+        allGameResultIds: gameResults.map(r => r.gameId),
+      })
+      
+      // If we have a gameResult but no playerStats, it might be corrupted data
+      // Log the full structure for debugging
+      console.error('[RESULTS] Full gameResult structure:', JSON.stringify(gameResult, null, 2))
+    }
+  }, [gameResult, roster, gameResults])
 
   if (isLoading) {
     return (
@@ -141,16 +167,6 @@ export default function ResultsPage() {
     pickName: string
     seasonTotal: number
   }
-
-  // Recalculate user scores from game result to ensure accuracy
-  // This ensures all users who made picks are shown with correct points
-  const recalculatedScores = useMemo(() => {
-    if (!gameResult || !completedGame || gamePicks.length === 0) {
-      return new Map<string, number>()
-    }
-    // Use the calculateUserScores function to get accurate scores
-    return calculateUserScores(gamePicks, gameResult, roster, completedGame)
-  }, [gameResult, completedGame, gamePicks, roster])
 
   // Calculate user scores for this game - show ALL users who made picks
   const userGameScores: UserGameScore[] = gamePicks.map((pick) => {
@@ -319,35 +335,80 @@ export default function ResultsPage() {
           </div>
 
           <div className="space-y-3 max-h-96 overflow-y-auto">
-            {gameResult.playerStats
-              .filter((stats) => stats.goals.length > 0 || stats.assists.length > 0)
+            {!gameResult.playerStats || gameResult.playerStats.length === 0 ? (
+              <div className="text-center py-8 text-gray-400">
+                <p>No player stats available for this game.</p>
+                <p className="text-sm mt-2">Player stats: {gameResult?.playerStats?.length || 0}, Roster: {roster.length}</p>
+              </div>
+            ) : gameResult.playerStats
               .map((stats) => {
-                const player = roster.find((p) => p.id === stats.playerId)
-                if (!player) return null
-
-                const points = calculatePlayerScore(stats, completedGame)
+                const player = roster.find((p) => {
+                  // Try multiple matching strategies
+                  if (p.id === stats.playerId) return true
+                  // Try matching by NHL player ID
+                  const nhlId = (p as Player & { playerId?: number }).playerId
+                  if (nhlId && String(nhlId) === String(stats.playerId)) return true
+                  return false
+                })
+                
+                // If player not found in roster, create a minimal player object from the stats
+                if (!player) {
+                  // Try to find player name from stats if available
+                  const playerName = stats.playerId || 'Unknown Player'
+                  const fallbackPlayer: Player = {
+                    id: stats.playerId,
+                    name: playerName,
+                    number: '',
+                    position: stats.position || 'F',
+                  }
+                  return { stats, player: fallbackPlayer, points: calculatePlayerScore(stats, completedGame) }
+                }
+                
+                return { stats, player, points: calculatePlayerScore(stats, completedGame) }
+              })
+              .filter(Boolean)
+              .sort((a, b) => {
+                // Sort by points descending, then by goals, then by assists
+                if (b!.points !== a!.points) return b!.points - a!.points
+                if (b!.stats.goals.length !== a!.stats.goals.length) return b!.stats.goals.length - a!.stats.goals.length
+                return b!.stats.assists.length - a!.stats.assists.length
+              })
+              .map((item) => {
+                if (!item) return null
+                const { stats, player, points } = item as { stats: typeof gameResult.playerStats[0], player: Player, points: number }
                 const goalCount = stats.goals.length
                 const assistCount = stats.assists.length
                 const shorthandedGoals = stats.goals.filter((g) => g.isShorthanded).length
                 const otGoals = stats.goals.filter((g) => g.isOTGoal).length
                 const shorthandedAssists = stats.assists.filter((a) => a.isShorthanded).length
+                const hasStats = goalCount > 0 || assistCount > 0
 
                 return (
                   <div
                     key={stats.playerId}
-                    className="bg-white/5 p-5 rounded-2xl border border-white/10"
+                    className={`bg-white/5 p-5 rounded-2xl border transition-all ${
+                      hasStats 
+                        ? 'border-white/10' 
+                        : 'border-white/5 opacity-60'
+                    }`}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex-1">
-                        <p className="text-white font-semibold text-lg">
+                        <p className={`font-semibold text-lg ${
+                          hasStats ? 'text-white' : 'text-gray-400'
+                        }`}>
                           #{player.number} {player.name}
                         </p>
                         <p className="text-gray-400 text-sm">{player.position}</p>
                       </div>
                       <div className="flex gap-6 text-center">
-                        {goalCount > 0 && (
-                          <div>
-                            <p className="text-white font-bold text-lg">{goalCount}G</p>
+                        <div>
+                          <p className={`font-bold text-lg ${
+                            goalCount > 0 ? 'text-white' : 'text-gray-500'
+                          }`}>
+                            {goalCount}G
+                          </p>
+                          {goalCount > 0 && (
                             <div className="flex gap-2 justify-center mt-1">
                               {shorthandedGoals > 0 && (
                                 <span className="text-xs text-blue-400">{shorthandedGoals} SH</span>
@@ -356,24 +417,31 @@ export default function ResultsPage() {
                                 <span className="text-xs text-orange-400">{otGoals} OT</span>
                               )}
                             </div>
-                          </div>
-                        )}
-                        {assistCount > 0 && (
-                          <div>
-                            <p className="text-white font-bold text-lg">{assistCount}A</p>
-                            {shorthandedAssists > 0 && (
-                              <p className="text-xs text-blue-400 mt-1">{shorthandedAssists} SH</p>
-                            )}
-                          </div>
-                        )}
+                          )}
+                        </div>
                         <div>
-                          <p className="text-red-300 font-bold text-xl">{points} PTS</p>
+                          <p className={`font-bold text-lg ${
+                            assistCount > 0 ? 'text-white' : 'text-gray-500'
+                          }`}>
+                            {assistCount}A
+                          </p>
+                          {assistCount > 0 && shorthandedAssists > 0 && (
+                            <p className="text-xs text-blue-400 mt-1">{shorthandedAssists} SH</p>
+                          )}
+                        </div>
+                        <div>
+                          <p className={`font-bold text-xl ${
+                            points > 0 ? 'text-red-300' : 'text-gray-500'
+                          }`}>
+                            {points} PTS
+                          </p>
                         </div>
                       </div>
                     </div>
                   </div>
                 )
-              })}
+              })
+              .filter(Boolean)}
           </div>
         </div>
       </div>

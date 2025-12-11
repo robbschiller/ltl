@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getRedWingsCurrentSeasonSchedule, getGameBoxscore, getGamePlayByPlay } from '@/lib/nhlApi'
+import { getRedWingsCurrentSeasonSchedule, fetchBoxscore, getGamePlayByPlay } from '@/lib/nhlApi'
 
 /**
  * GET /api/nhl/last-game-boxscore
@@ -45,18 +45,44 @@ export async function GET() {
     // Step 3 & 4: Get boxscore and play-by-play
     console.log(`[LAST-GAME-BOXSCORE] Fetching boxscore and play-by-play...`)
     const [boxscore, playByPlay] = await Promise.all([
-      getGameBoxscore(gameId),
+      fetchBoxscore(gameId),
       getGamePlayByPlay(gameId),
     ])
     
-    console.log(`[LAST-GAME-BOXSCORE] Successfully fetched data for game ${gameId}`)
+    // Verify boxscore has player stats
+    if (!boxscore?.playerByGameStats) {
+      console.error('[LAST-GAME-BOXSCORE] ERROR: No playerByGameStats in boxscore')
+      return NextResponse.json(
+        { error: 'Boxscore missing player stats', boxscoreKeys: Object.keys(boxscore || {}) },
+        { status: 500 }
+      )
+    }
     
-    // Step 5: Return the data
+    const homeHasPlayers = !!boxscore.playerByGameStats.homeTeam
+    const awayHasPlayers = !!boxscore.playerByGameStats.awayTeam
+    console.log('[LAST-GAME-BOXSCORE] Player stats found - home:', homeHasPlayers, 'away:', awayHasPlayers)
+    
+    // Extract scores from the schedule game (they're available there)
+    const isHome = lastGame.homeTeam.abbrev === 'DET'
+    const redWingsTeam = isHome ? lastGame.homeTeam : lastGame.awayTeam
+    const opponentTeam = isHome ? lastGame.awayTeam : lastGame.homeTeam
+    
+    const redWingsScore = redWingsTeam.score ?? 0
+    const opponentScore = opponentTeam.score ?? 0
+    
+    // Step 5: Return the data with scores from schedule
     return NextResponse.json({
       gameId,
       game: lastGame,
       boxscore,
       playByPlay,
+      scores: {
+        redWingsScore,
+        opponentScore,
+        isHome,
+        homeScore: lastGame.homeTeam.score ?? 0,
+        awayScore: lastGame.awayTeam.score ?? 0,
+      },
     })
   } catch (error) {
     console.error('[LAST-GAME-BOXSCORE] Error:', error)
