@@ -5,6 +5,8 @@ import type {
   GameResult,
   UserPick,
 } from './types'
+import { isForwardPosition, isDefensemanPosition, isGoaliePosition, normalizePosition, findPlayerStats } from './playerUtils'
+import { SCORING, FORWARD_POSITIONS } from './scoringConstants'
 
 /**
  * Simulates game stats for all players on the roster
@@ -45,7 +47,7 @@ export function simulateGameStats(
     const rand = Math.random()
     let positionFilter: string[]
     if (rand < 0.7) {
-      positionFilter = ['C', 'LW', 'RW']
+      positionFilter = FORWARD_POSITIONS
     } else if (rand < 0.95) {
       positionFilter = ['D']
     } else {
@@ -164,14 +166,14 @@ export function calculateGoalieScore(
   
   // Goalie scoring rules
   if (goalsAllowed === 0) {
-    points += 5 // Shutout
+    points += SCORING.GOALIE.SHUTOUT
   } else if (goalsAllowed <= 2) {
-    points += 3 // 1-2 goals allowed
+    points += SCORING.GOALIE.GOALS_1_2
   }
   // 3+ goals = 0 points
 
   // Assists: 5 points each
-  points += playerStats.assists.length * 5
+  points += playerStats.assists.length * SCORING.GOALIE.ASSIST
 
   return points
 }
@@ -186,14 +188,12 @@ export function calculateForwardScore(
 
   // Calculate goal points
   playerStats.goals.forEach((goal) => {
-    let goalPoints = 2 // Base: 2 points per regulation goal
-    
-    if (goal.isOTGoal) {
-      goalPoints = 7 // OT goal = 7 total points
-    }
+    let goalPoints = goal.isOTGoal 
+      ? SCORING.FORWARD.OT_GOAL 
+      : SCORING.FORWARD.GOAL
     
     if (goal.isShorthanded) {
-      goalPoints *= 2 // Double for shorthanded
+      goalPoints *= SCORING.MULTIPLIER.SHORTHANDED
     }
     
     points += goalPoints
@@ -201,10 +201,10 @@ export function calculateForwardScore(
 
   // Calculate assist points
   playerStats.assists.forEach((assist) => {
-    let assistPoints = 1 // Base: 1 point per assist
+    let assistPoints = SCORING.FORWARD.ASSIST
     
     if (assist.isShorthanded) {
-      assistPoints *= 2 // Double for shorthanded
+      assistPoints *= SCORING.MULTIPLIER.SHORTHANDED
     }
     
     points += assistPoints
@@ -223,14 +223,12 @@ export function calculateDefensemanScore(
 
   // Calculate goal points
   playerStats.goals.forEach((goal) => {
-    let goalPoints = 3 // Base: 3 points per regulation goal
-    
-    if (goal.isOTGoal) {
-      goalPoints = 8 // OT goal = 8 total points
-    }
+    let goalPoints = goal.isOTGoal 
+      ? SCORING.DEFENSEMAN.OT_GOAL 
+      : SCORING.DEFENSEMAN.GOAL
     
     if (goal.isShorthanded) {
-      goalPoints *= 2 // Double for shorthanded
+      goalPoints *= SCORING.MULTIPLIER.SHORTHANDED
     }
     
     points += goalPoints
@@ -238,10 +236,10 @@ export function calculateDefensemanScore(
 
   // Calculate assist points
   playerStats.assists.forEach((assist) => {
-    let assistPoints = 1 // Base: 1 point per assist
+    let assistPoints = SCORING.DEFENSEMAN.ASSIST
     
     if (assist.isShorthanded) {
-      assistPoints *= 2 // Double for shorthanded
+      assistPoints *= SCORING.MULTIPLIER.SHORTHANDED
     }
     
     points += assistPoints
@@ -257,28 +255,30 @@ export function calculatePlayerScore(
   playerStats: GamePlayerStats,
   gameResult: Game,
 ): number {
-  const position = playerStats.position
+  const position = normalizePosition(playerStats.position)
 
-  if (position === 'G') {
+  if (isGoaliePosition(position)) {
     return calculateGoalieScore(playerStats, gameResult)
-  } else if (['C', 'LW', 'RW'].includes(position)) {
+  } else if (isForwardPosition(position)) {
     return calculateForwardScore(playerStats)
-  } else if (position === 'D') {
+  } else if (isDefensemanPosition(position)) {
     return calculateDefensemanScore(playerStats)
   }
 
+  // Unknown position - should not happen with normalized positions
+  if (process.env.NODE_ENV === 'development') {
+    console.warn(`[CALCULATE-PLAYER-SCORE] Unknown position: ${playerStats.position} (normalized: ${position}) for player ${playerStats.playerId}`)
+  }
   return 0
 }
 
 /**
- * Calculates team points: 1 point per goal past 3
+ * Calculates team points: 1 point per goal past threshold
  * So 4 goals = 4 points, 5 goals = 5 points, etc.
- * (Total goals scored if > 3, otherwise 0)
  */
 export function calculateTeamScore(teamGoals: number): number {
-  if (teamGoals <= 3) return 0
-  // Based on "4 points for 4 goals, 5 for 5, etc."
-  // This means total goals = total points
+  if (teamGoals <= SCORING.TEAM.GOALS_THRESHOLD) return 0
+  // Points = total goals (1 point per goal past threshold)
   return teamGoals
 }
 
@@ -344,20 +344,47 @@ export function calculateUserScores(
 ): Map<string, number> {
   const userScores = new Map<string, number>()
 
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[CALCULATE-USER-SCORES] Starting calculation:', {
+      picksCount: picks.length,
+      playerStatsCount: gameResult.playerStats.length,
+      gameId: gameResult.gameId,
+    })
+  }
+
   picks.forEach((pick) => {
     if (pick.playerId === 'team') {
       // Team pick
       userScores.set(pick.userId, gameResult.teamPoints)
     } else {
-      // Player pick
-      const playerStats = gameResult.playerStats.find(
-        (stats) => stats.playerId === pick.playerId,
-      )
+      // Player pick - find matching player stats using shared utility
+      const rosterPlayer = roster.find((p) => p.id === pick.playerId)
       
-      if (playerStats) {
-        const points = calculatePlayerScore(playerStats, game)
-        userScores.set(pick.userId, points)
+      if (rosterPlayer) {
+        const playerStats = findPlayerStats(rosterPlayer, gameResult.playerStats)
+        
+        if (playerStats) {
+          const points = calculatePlayerScore(playerStats, game)
+          userScores.set(pick.userId, points)
+          
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`[CALCULATE-USER-SCORES] Player pick ${pick.playerId}:`, {
+              goals: playerStats.goals.length,
+              assists: playerStats.assists.length,
+              position: playerStats.position,
+              calculatedPoints: points,
+            })
+          }
+        } else {
+          if (process.env.NODE_ENV === 'development') {
+            console.warn(`[CALCULATE-USER-SCORES] No stats found for player pick ${pick.playerId}`)
+          }
+          userScores.set(pick.userId, 0)
+        }
       } else {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn(`[CALCULATE-USER-SCORES] Player not found in roster: ${pick.playerId}`)
+        }
         userScores.set(pick.userId, 0)
       }
     }

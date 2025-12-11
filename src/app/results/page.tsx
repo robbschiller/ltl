@@ -4,7 +4,8 @@ import React, { useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useGame } from '@/contexts/GameContext'
 import { TrophyIcon, ArrowLeftIcon, TargetIcon } from 'lucide-react'
-import { calculatePlayerScore, calculateUserScores } from '@/lib/gameSimulator'
+import { calculatePlayerScore } from '@/lib/gameSimulator'
+import { findPlayerStats } from '@/lib/playerUtils'
 import type { Player } from '@/lib/types'
 
 export default function ResultsPage() {
@@ -15,7 +16,6 @@ export default function ResultsPage() {
     currentPicks,
     users,
     userScores,
-    gameUserScores,
     isLoading,
   } = useGame()
 
@@ -69,10 +69,6 @@ export default function ResultsPage() {
     return currentPicks.filter((p) => p.gameId === completedGame.id)
   }, [completedGame, currentPicks])
 
-  const gameScores = useMemo(() => {
-    if (!completedGame) return new Map<string, number>()
-    return gameUserScores.get(completedGame.id) || new Map<string, number>()
-  }, [completedGame, gameUserScores])
 
   // We need roster data - for now, we'll need to fetch it or pass it
   // For the results page, we can make a simplified version that doesn't require full roster
@@ -93,14 +89,57 @@ export default function ResultsPage() {
     fetchRoster()
   }, [])
 
-  // Recalculate user scores from game result to ensure accuracy
-  // This ensures all users who made picks are shown with correct points
+  // Calculate user scores directly from gameResult.playerStats using the same logic
+  // as the player stats area to ensure consistency
   const recalculatedScores = useMemo(() => {
     if (!gameResult || !completedGame || gamePicks.length === 0) {
       return new Map<string, number>()
     }
-    // Use the calculateUserScores function to get accurate scores
-    return calculateUserScores(gamePicks, gameResult, roster, completedGame)
+    
+    const scores = new Map<string, number>()
+    
+    gamePicks.forEach((pick) => {
+      if (pick.playerId === 'team') {
+        // Team pick - use teamPoints from gameResult
+        scores.set(pick.userId, gameResult.teamPoints)
+      } else {
+        // Player pick - find the player stats using the same matching logic as player stats area
+        const player = roster.find((p) => p.id === pick.playerId)
+        
+        if (player) {
+          // Use shared utility to find player stats
+          const playerStats = findPlayerStats(player, gameResult.playerStats)
+          
+          if (playerStats) {
+            // Use the exact same calculation as the player stats area
+            const points = calculatePlayerScore(playerStats, completedGame)
+            scores.set(pick.userId, points)
+            
+            // Only log in development
+            if (process.env.NODE_ENV === 'development') {
+              console.log(`[RESULTS] User ${pick.userId} picked ${player.name}:`, {
+                goals: playerStats.goals.length,
+                assists: playerStats.assists.length,
+                position: playerStats.position,
+                points,
+              })
+            }
+          } else {
+            if (process.env.NODE_ENV === 'development') {
+              console.warn(`[RESULTS] No stats found for picked player ${player.name} (${pick.playerId})`)
+            }
+            scores.set(pick.userId, 0)
+          }
+        } else {
+          if (process.env.NODE_ENV === 'development') {
+            console.warn(`[RESULTS] Picked player not found in roster: ${pick.playerId}`)
+          }
+          scores.set(pick.userId, 0)
+        }
+      }
+    })
+    
+    return scores
   }, [gameResult, completedGame, gamePicks, roster])
 
   // Debug logging - only log if there's an issue
@@ -169,31 +208,20 @@ export default function ResultsPage() {
   }
 
   // Calculate user scores for this game - show ALL users who made picks
+  // Use recalculated scores which are calculated using the exact same logic as the player stats area
   const userGameScores: UserGameScore[] = gamePicks.map((pick) => {
     const user = users.find((u) => u.id === pick.userId)
-    // Use recalculated scores, fallback to gameScores, then calculate on the fly
-    let points = recalculatedScores.get(pick.userId) || gameScores.get(pick.userId) || 0
+    // Get points from recalculated scores (calculated using same logic as player stats area)
+    const points = recalculatedScores.get(pick.userId) ?? 0
     let pickName = ''
     let pickType: 'player' | 'team' = 'player'
 
     if (pick.playerId === 'team') {
       pickName = 'The Team'
       pickType = 'team'
-      // Calculate team points if not already calculated
-      if (points === 0 && completedGame) {
-        points = completedGame.teamGoals > 3 ? completedGame.teamGoals : 0
-      }
     } else {
       const player = roster.find((p) => p.id === pick.playerId)
       pickName = player ? `#${player.number} ${player.name}` : 'Unknown Player'
-      
-      // Calculate player points from gameResult if not already calculated
-      if (points === 0 && gameResult) {
-        const playerStats = gameResult.playerStats.find((s) => s.playerId === pick.playerId)
-        if (playerStats) {
-          points = calculatePlayerScore(playerStats, completedGame)
-        }
-      }
     }
 
     return {
@@ -342,14 +370,7 @@ export default function ResultsPage() {
               </div>
             ) : gameResult.playerStats
               .map((stats) => {
-                const player = roster.find((p) => {
-                  // Try multiple matching strategies
-                  if (p.id === stats.playerId) return true
-                  // Try matching by NHL player ID
-                  const nhlId = (p as Player & { playerId?: number }).playerId
-                  if (nhlId && String(nhlId) === String(stats.playerId)) return true
-                  return false
-                })
+                const player = roster.find((p) => findPlayerStats(p, [stats]) !== null)
                 
                 // If player not found in roster, create a minimal player object from the stats
                 if (!player) {
