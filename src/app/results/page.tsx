@@ -345,6 +345,9 @@ export default function ResultsPage() {
                     <div className="text-right">
                       <p className="text-sm text-gray-400 mb-1">Season Total</p>
                       <p className="text-2xl font-bold text-red-300">{score.seasonTotal}</p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {score.seasonTotal - score.points} + {score.points} = {score.seasonTotal}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -362,7 +365,7 @@ export default function ResultsPage() {
             </h2>
           </div>
 
-          <div className="space-y-3 max-h-96 overflow-y-auto">
+          <div className="space-y-3">
             {!gameResult.playerStats || gameResult.playerStats.length === 0 ? (
               <div className="text-center py-8 text-gray-400">
                 <p>No player stats available for this game.</p>
