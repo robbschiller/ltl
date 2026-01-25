@@ -143,7 +143,13 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const picks = await prisma.pick.findMany({ where: { gameId: game.id } })
+    const picksRaw = await prisma.pick.findMany({ where: { gameId: game.id } })
+    const picks = picksRaw.map((pick) => ({
+      userId: pick.userId,
+      gameId: pick.gameId,
+      playerId: pick.playerId,
+      playerPosition: pick.playerPosition ?? undefined,
+    }))
     const scores = calculateUserScores(picks, result, roster, gameForParsing)
 
     const userIds = Array.from(scores.keys())

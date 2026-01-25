@@ -1,6 +1,8 @@
 import type {
   Game,
   GamePlayerStats,
+  GameResult,
+  Player,
   UserPick,
 } from './types'
 import { isForwardPosition, isDefensemanPosition, isGoaliePosition, normalizePosition, findPlayerStats } from './playerUtils'
