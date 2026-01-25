@@ -17,9 +17,8 @@ export function PickOrder({ currentUserId, roster }: PickOrderProps) {
     currentPicks,
     users,
     userScores,
+    picksLocked,
     makePick,
-    getUserScoreForGame,
-    getTotalScoreForUser,
   } = useGame()
 
   const isGameCompleted = currentGame?.status === 'completed'
@@ -28,25 +27,19 @@ export function PickOrder({ currentUserId, roster }: PickOrderProps) {
   const usersWithPicks = useMemo(() => {
     return users.map((user) => {
       const pick = currentPicks.find((p) => p.userId === user.id && p.gameId === currentGame?.id)
-      const totalScore = getTotalScoreForUser(user.id)
-      
-      // Get game points if game is completed
-      const gamePoints = isGameCompleted && currentGame 
-        ? getUserScoreForGame(user.id, currentGame.id)
-        : 0
+      const totalScore = userScores.get(user.id) || 0
 
       return {
         ...user,
         pick: pick?.playerId || null,
         pickType: pick?.playerId === 'team' ? 'team' : 'player',
         totalScore,
-        gamePoints,
       }
     })
-  }, [users, currentPicks, currentGame, isGameCompleted, getTotalScoreForUser, getUserScoreForGame])
+  }, [users, currentPicks, currentGame, isGameCompleted, userScores])
 
   const handlePickChange = (userId: string, value: string) => {
-    if (!currentGame || isGameCompleted) return
+    if (!currentGame || isGameCompleted || picksLocked) return
 
     if (value === 'team') {
       makePick(userId, 'team')
@@ -63,7 +56,7 @@ export function PickOrder({ currentUserId, roster }: PickOrderProps) {
   const currentPicker = usersWithPicks[currentPickerIndex]
 
   // Check if all users have made picks
-  const allPicksMade = users.length > 0 && usersWithPicks.every((user) => user.pick !== null) && !isGameCompleted
+  const allPicksMade = picksLocked && !isGameCompleted
 
   // Get already picked player IDs (exclude 'team')
   const pickedPlayerIds = usersWithPicks
@@ -167,7 +160,7 @@ export function PickOrder({ currentUserId, roster }: PickOrderProps) {
               : null
 
             const isCurrentPicker = index === currentPickerIndex
-            const canPick = isCurrentPicker && !isGameCompleted
+            const canPick = isCurrentPicker && !isGameCompleted && !picksLocked
             const isWaiting = index > currentPickerIndex
 
             return (
@@ -190,11 +183,6 @@ export function PickOrder({ currentUserId, roster }: PickOrderProps) {
                       <div className="text-xs text-gray-400 uppercase tracking-wide">
                         pts
                       </div>
-                      {isGameCompleted && user.gamePoints > 0 && (
-                        <div className="text-xs text-green-400 font-medium mt-1">
-                          +{user.gamePoints}
-                        </div>
-                      )}
                     </div>
 
                     <div
@@ -259,7 +247,7 @@ export function PickOrder({ currentUserId, roster }: PickOrderProps) {
                       <select
                         value={user.pick || ''}
                         onChange={(e) => handlePickChange(user.id, e.target.value)}
-                        disabled={isGameCompleted}
+                        disabled={isGameCompleted || picksLocked}
                         className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-red-500/50 focus:ring-2 focus:ring-red-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <option value="" className="bg-gray-900">

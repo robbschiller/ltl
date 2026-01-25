@@ -38,6 +38,44 @@ model Pick {
   @@index([gameId])
 }
 
+model Game {
+  id               String   @id
+  nhlGameId        Int?
+  opponent         String
+  opponentLogo     String
+  date             String
+  time             String
+  venue            String
+  isHome           Boolean
+  startTimeUTC     String?
+  status           String
+  teamGoals        Int      @default(0)
+  opponentGoals    Int      @default(0)
+  wentToOT         Boolean  @default(false)
+  emptyNetGoals    Int      @default(0)
+  shootoutOccurred Boolean  @default(false)
+  lockedAt         DateTime?
+  finalizedAt      DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([status])
+  @@index([finalizedAt])
+}
+
+model GameUserScore {
+  id        String   @id @default(cuid())
+  gameId    String
+  userId    String
+  points    Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([gameId, userId])
+  @@index([gameId])
+  @@index([userId])
+}
+
 model UserScore {
   id                String   @id @default(cuid())
   userId            String   @unique

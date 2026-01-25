@@ -26,6 +26,9 @@ export interface Game {
   // Optional NHL API fields
   gameId?: number
   nhlGameData?: any
+  startTimeUTC?: string
+  lockedAt?: string
+  finalizedAt?: string
 }
 
 export interface GamePlayerStats {

@@ -11,63 +11,17 @@ import type { Player } from '@/lib/types'
 export default function ResultsPage() {
   const router = useRouter()
   const {
-    currentGame,
-    gameResults,
-    currentPicks,
+    latestCompletedGame,
+    latestGameResult,
+    latestPicks,
     users,
     userScores,
     isLoading,
   } = useGame()
 
-  // Get the most recent completed game
-  const completedGame = useMemo(() => {
-    // If currentGame is completed, use it
-    if (currentGame && currentGame.status === 'completed') {
-      return currentGame
-    }
-    // If currentGame exists but isn't marked completed, check if we have results for it
-    if (currentGame && gameResults.length > 0) {
-      const hasResult = gameResults.some((r) => r.gameId === currentGame.id)
-      if (hasResult) {
-        // We have results, so treat it as completed even if status isn't set
-        return { ...currentGame, status: 'completed' as const }
-      }
-    }
-    // If we have gameResults but no currentGame match, use the most recent result's game
-    if (gameResults.length > 0 && currentGame) {
-      // Try to find a result that matches currentGame
-      const matchingResult = gameResults.find((r) => r.gameId === currentGame.id)
-      if (matchingResult) {
-        return { ...currentGame, status: 'completed' as const }
-      }
-      // Otherwise, use the most recent result
-      const mostRecentResult = gameResults[gameResults.length - 1]
-      if (mostRecentResult && currentGame.id === mostRecentResult.gameId) {
-        return { ...currentGame, status: 'completed' as const }
-      }
-    }
-    return null
-  }, [currentGame, gameResults])
-
-  const gameResult = useMemo(() => {
-    if (!completedGame) return null
-    const result = gameResults.find((r) => r.gameId === completedGame.id) || null
-    
-    // Validate that the result has playerStats
-    if (result && (!result.playerStats || result.playerStats.length === 0)) {
-      console.warn('[RESULTS] Found gameResult but it has no playerStats. This might be corrupted data.', {
-        gameId: result.gameId,
-        resultKeys: Object.keys(result),
-      })
-    }
-    
-    return result
-  }, [completedGame, gameResults])
-
-  const gamePicks = useMemo(() => {
-    if (!completedGame) return []
-    return currentPicks.filter((p) => p.gameId === completedGame.id)
-  }, [completedGame, currentPicks])
+  const completedGame = latestCompletedGame
+  const gameResult = latestGameResult
+  const gamePicks = latestPicks
 
 
   // We need roster data - for now, we'll need to fetch it or pass it
@@ -150,17 +104,10 @@ export default function ResultsPage() {
         gameResultKeys: Object.keys(gameResult),
         hasPlayerStats: !!gameResult.playerStats,
         playerStatsLength: gameResult.playerStats?.length || 0,
-        playerStatsType: typeof gameResult.playerStats,
         rosterSize: roster.length,
-        gameResultsLength: gameResults.length,
-        allGameResultIds: gameResults.map(r => r.gameId),
       })
-      
-      // If we have a gameResult but no playerStats, it might be corrupted data
-      // Log the full structure for debugging
-      console.error('[RESULTS] Full gameResult structure:', JSON.stringify(gameResult, null, 2))
     }
-  }, [gameResult, roster, gameResults])
+  }, [gameResult, roster])
 
   if (isLoading) {
     return (
@@ -180,8 +127,6 @@ export default function ResultsPage() {
           <div className="backdrop-blur-xl bg-white/5 p-8 rounded-3xl border border-white/10 shadow-2xl text-center">
             <p className="text-gray-300 text-lg mb-2">No completed games found.</p>
             <p className="text-gray-400 text-sm mb-4">
-              Current game: {currentGame ? `${currentGame.opponent} (${currentGame.status})` : 'None'}<br />
-              Game results: {gameResults.length}<br />
               Check browser console for details.
             </p>
             <button

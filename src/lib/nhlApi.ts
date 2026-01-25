@@ -95,6 +95,13 @@ export async function getScheduleForDate(date: string): Promise<ScheduleResponse
   return nhlFetch(`${NHL_WEB_BASE}/schedule/${date}`)
 }
 
+/**
+ * Get scores for a specific date (YYYY-MM-DD)
+ */
+export async function getScoreForDate(date: string): Promise<any> {
+  return nhlFetch(`${NHL_WEB_BASE}/score/${date}`)
+}
+
 // ============================================================================
 // Web API - Standings
 // ============================================================================
