@@ -160,7 +160,8 @@ export function PickOrder({ currentUserId, roster }: PickOrderProps) {
               : null
 
             const isCurrentPicker = index === currentPickerIndex
-            const canPick = isCurrentPicker && !isGameCompleted && !picksLocked
+            const isCurrentUser = user.id === currentUserId
+            const canPick = isCurrentPicker && isCurrentUser && !isGameCompleted && !picksLocked
             const isWaiting = index > currentPickerIndex
 
             return (
@@ -234,7 +235,7 @@ export function PickOrder({ currentUserId, roster }: PickOrderProps) {
                         </p>
                       ) : isCurrentPicker && !isGameCompleted ? (
                         <p className="text-sm text-red-300 mt-1">
-                          {user.id === currentUserId
+                          {isCurrentUser
                             ? 'Make your pick'
                             : 'Picking now...'}
                         </p>

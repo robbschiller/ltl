@@ -3,8 +3,10 @@ import bcrypt from 'bcryptjs'
 
 const prisma = new PrismaClient()
 
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'timothy.schiller@gmail.com').toLowerCase()
+
 const users = [
-  { name: 'Timothy Schiller', email: 'timothy@example.com' },
+  { name: 'Timothy Schiller', email: ADMIN_EMAIL },
   { name: 'Rob Schiller', email: 'rob@example.com' },
   { name: 'Robb Schiller', email: 'robb@example.com' },
   { name: 'Jordan Schiller', email: 'jordan@example.com' },
@@ -48,6 +50,7 @@ async function createUsers() {
         email: userData.email,
         password: hashedPassword,
         name: userData.name,
+        isAdmin: userData.email.toLowerCase() === ADMIN_EMAIL,
         score: {
           create: {
             totalSeasonPoints: 0,

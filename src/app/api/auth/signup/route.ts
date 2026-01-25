@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
 
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'timothy.schiller@gmail.com').toLowerCase()
+
 export async function POST(request: NextRequest) {
   try {
     const { email, password, name } = await request.json()
@@ -15,8 +17,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if user already exists
+    const normalizedEmail = email.toLowerCase()
+
     const existingUser = await prisma.user.findUnique({
-      where: { email },
+      where: { email: normalizedEmail },
     })
 
     if (existingUser) {
@@ -32,9 +36,10 @@ export async function POST(request: NextRequest) {
     // Create user and automatically create UserScore
     const user = await prisma.user.create({
       data: {
-        email,
+        email: normalizedEmail,
         password: hashedPassword,
         name,
+        isAdmin: normalizedEmail === ADMIN_EMAIL,
         score: {
           create: {
             totalSeasonPoints: 0,
@@ -45,6 +50,7 @@ export async function POST(request: NextRequest) {
         id: true,
         email: true,
         name: true,
+        isAdmin: true,
         createdAt: true,
       },
     })
@@ -52,7 +58,7 @@ export async function POST(request: NextRequest) {
     // Create a simple session (using a cookie with user ID)
     // In production, you'd want to use a proper session library or JWT
     const response = NextResponse.json(
-      { user: { id: user.id, email: user.email, name: user.name } },
+      { user: { id: user.id, email: user.email, name: user.name, isAdmin: user.isAdmin } },
       { status: 201 }
     )
 

@@ -7,6 +7,7 @@ interface AuthContextType {
     uid: string
     displayName: string
     email: string
+    isAdmin: boolean
   } | null
   loading: boolean
   signUp: (
@@ -33,6 +34,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     uid: string
     displayName: string
     email: string
+    isAdmin: boolean
   } | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -47,6 +49,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             uid: data.user.id,
             displayName: data.user.name,
             email: data.user.email,
+            isAdmin: data.user.isAdmin,
           })
         }
       } catch (error) {
@@ -77,6 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       uid: data.user.id,
       displayName: data.user.name,
       email: data.user.email,
+      isAdmin: data.user.isAdmin,
     })
   }
 
@@ -99,6 +103,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       uid: data.user.id,
       displayName: data.user.name,
       email: data.user.email,
+      isAdmin: data.user.isAdmin,
     })
   }
 

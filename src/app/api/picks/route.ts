@@ -31,18 +31,58 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const { userId, gameId, playerId, playerPosition } = await request.json()
+    const authUserId = request.cookies.get('userId')?.value
 
-    if (!userId || !gameId || !playerId) {
+    if (!authUserId) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+    }
+
+    if (!gameId || !playerId) {
       return NextResponse.json(
-        { error: 'userId, gameId, and playerId are required' },
+        { error: 'gameId and playerId are required' },
         { status: 400 },
       )
+    }
+
+    if (userId && userId !== authUserId) {
+      return NextResponse.json({ error: 'Cannot pick for another user' }, { status: 403 })
+    }
+
+    const game = await prisma.game.findUnique({ where: { id: gameId } })
+    if (!game) {
+      return NextResponse.json({ error: 'Game not found' }, { status: 404 })
+    }
+
+    if (game.status === 'completed' || game.lockedAt) {
+      return NextResponse.json({ error: 'Picks are locked' }, { status: 403 })
+    }
+
+    const pickOrder = await prisma.pickOrder.findFirst({
+      orderBy: { updatedAt: 'desc' },
+    })
+
+    if (pickOrder?.userIds) {
+      try {
+        const userIds = JSON.parse(pickOrder.userIds) as string[]
+        const existingPicks = await prisma.pick.findMany({
+          where: { gameId },
+          select: { userId: true },
+        })
+        const pickedUserIds = new Set(existingPicks.map((pick) => pick.userId))
+        const currentPicker = userIds.find((id) => !pickedUserIds.has(id))
+
+        if (currentPicker && currentPicker !== authUserId) {
+          return NextResponse.json({ error: 'Not your turn to pick' }, { status: 403 })
+        }
+      } catch (error) {
+        console.error('Error parsing pick order:', error)
+      }
     }
 
     await prisma.pick.upsert({
       where: {
         userId_gameId: {
-          userId,
+          userId: authUserId,
           gameId,
         },
       },
@@ -51,22 +91,21 @@ export async function POST(request: NextRequest) {
         playerPosition: playerPosition || null,
       },
       create: {
-        userId,
+        userId: authUserId,
         gameId,
         playerId,
         playerPosition: playerPosition || null,
       },
     })
 
-    const [picksCount, usersCount, game] = await Promise.all([
+    const [picksCount, usersCount] = await Promise.all([
       prisma.pick.count({ where: { gameId } }),
       prisma.user.count(),
-      prisma.game.findUnique({ where: { id: gameId } }),
     ])
 
     const picksLocked = usersCount > 0 && picksCount >= usersCount
 
-    if (picksLocked && game && !game.lockedAt) {
+    if (picksLocked && !game.lockedAt) {
       await prisma.game.update({
         where: { id: gameId },
         data: { lockedAt: new Date() },

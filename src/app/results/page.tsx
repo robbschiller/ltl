@@ -3,6 +3,7 @@
 import React, { useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useGame } from '@/contexts/GameContext'
+import { useAuth } from '@/contexts/AuthContext'
 import { TrophyIcon, ArrowLeftIcon, TargetIcon } from 'lucide-react'
 import { calculatePlayerScore } from '@/lib/gameSimulator'
 import { findPlayerStats } from '@/lib/playerUtils'
@@ -10,6 +11,7 @@ import type { Player } from '@/lib/types'
 
 export default function ResultsPage() {
   const router = useRouter()
+  const { currentUser, loading: authLoading } = useAuth()
   const {
     latestCompletedGame,
     latestGameResult,
@@ -18,6 +20,12 @@ export default function ResultsPage() {
     userScores,
     isLoading,
   } = useGame()
+
+  React.useEffect(() => {
+    if (!authLoading && !currentUser) {
+      router.push('/login')
+    }
+  }, [authLoading, currentUser, router])
 
   const completedGame = latestCompletedGame
   const gameResult = latestGameResult

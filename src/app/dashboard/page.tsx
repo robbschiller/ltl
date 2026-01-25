@@ -22,7 +22,7 @@ interface RosterPlayer {
 
 export default function Dashboard() {
   const router = useRouter()
-  const { currentUser } = useAuth()
+  const { currentUser, loading: authLoading } = useAuth()
   const {
     currentGame,
     currentPicks,
@@ -38,6 +38,12 @@ export default function Dashboard() {
 
   const [roster, setRoster] = useState<RosterPlayer[]>([])
   const [isLoadingRoster, setIsLoadingRoster] = useState(true)
+
+  useEffect(() => {
+    if (!authLoading && !currentUser) {
+      router.push('/login')
+    }
+  }, [authLoading, currentUser, router])
 
   // Fetch roster from NHL API
   useEffect(() => {
