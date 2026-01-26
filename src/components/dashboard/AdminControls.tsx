@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useState, useEffect } from 'react'
 import type { Player } from '@/lib/types'
 
 interface AdminControlsProps {
@@ -26,6 +26,8 @@ export function AdminControls({
   const [isSavingPick, setIsSavingPick] = useState(false)
   const [isSavingScores, setIsSavingScores] = useState(false)
   const [isRemovingUser, setIsRemovingUser] = useState(false)
+  const [pickOrderIds, setPickOrderIds] = useState<string[]>([])
+  const [isSavingOrder, setIsSavingOrder] = useState(false)
 
   const rosterOptions = useMemo(() => {
     return roster.map((player) => ({
@@ -33,6 +35,25 @@ export function AdminControls({
       label: `#${player.number} ${player.name} (${player.position})`,
     }))
   }, [roster])
+
+  useEffect(() => {
+    setPickOrderIds(users.map((user) => user.id))
+  }, [users])
+
+  const orderedPickUsers = useMemo(() => {
+    const userMap = new Map(users.map((user) => [user.id, user]))
+    const ordered = pickOrderIds
+      .map((id) => userMap.get(id))
+      .filter((user): user is { id: string; name: string } => Boolean(user))
+
+    users.forEach((user) => {
+      if (!pickOrderIds.includes(user.id)) {
+        ordered.push(user)
+      }
+    })
+
+    return ordered
+  }, [pickOrderIds, users])
 
   const handlePickSubmit = async () => {
     if (!selectedUserId || !selectedPick) return
@@ -109,6 +130,38 @@ export function AdminControls({
 
     if (selectedUserId === userId) {
       setSelectedUserId(users.find((user) => user.id !== userId)?.id || '')
+    }
+
+    await onRefresh()
+  }
+
+  const movePickOrder = (userId: string, direction: 'up' | 'down') => {
+    setPickOrderIds((prev) => {
+      const index = prev.indexOf(userId)
+      if (index === -1) return prev
+      const nextIndex = direction === 'up' ? index - 1 : index + 1
+      if (nextIndex < 0 || nextIndex >= prev.length) return prev
+      const nextOrder = [...prev]
+      const [removed] = nextOrder.splice(index, 1)
+      nextOrder.splice(nextIndex, 0, removed)
+      return nextOrder
+    })
+  }
+
+  const handleSavePickOrder = async () => {
+    if (pickOrderIds.length === 0) return
+    setIsSavingOrder(true)
+    const response = await fetch('/api/pick-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userIds: pickOrderIds }),
+    })
+    setIsSavingOrder(false)
+
+    if (!response.ok) {
+      const message = await response.text()
+      console.error('Failed to update pick order:', message)
+      return
     }
 
     await onRefresh()
@@ -201,6 +254,42 @@ export function AdminControls({
             </div>
           ))}
         </div>
+      </div>
+
+      <div className="mt-6">
+        <h4 className="text-sm font-semibold text-gray-300 mb-2">Adjust Pick Order</h4>
+        <div className="space-y-2">
+          {orderedPickUsers.map((user, index) => (
+            <div key={user.id} className="flex items-center justify-between">
+              <span className="text-sm text-gray-200">
+                {index + 1}. {user.name}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => movePickOrder(user.id, 'up')}
+                  disabled={index === 0}
+                  className="px-3 py-1 rounded-lg bg-gray-700 hover:bg-gray-600 text-white text-xs disabled:opacity-50"
+                >
+                  Up
+                </button>
+                <button
+                  onClick={() => movePickOrder(user.id, 'down')}
+                  disabled={index === orderedPickUsers.length - 1}
+                  className="px-3 py-1 rounded-lg bg-gray-700 hover:bg-gray-600 text-white text-xs disabled:opacity-50"
+                >
+                  Down
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <button
+          onClick={handleSavePickOrder}
+          disabled={isSavingOrder}
+          className="mt-3 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50"
+        >
+          {isSavingOrder ? 'Saving...' : 'Save Pick Order'}
+        </button>
       </div>
     </div>
   )
