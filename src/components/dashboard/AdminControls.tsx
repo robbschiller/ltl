@@ -23,6 +23,7 @@ export function AdminControls({
   const [scoreEdits, setScoreEdits] = useState<Record<string, string>>({})
   const [isSavingPick, setIsSavingPick] = useState(false)
   const [isSavingScores, setIsSavingScores] = useState(false)
+  const [isRemovingUser, setIsRemovingUser] = useState(false)
 
   const rosterOptions = useMemo(() => {
     return roster.map((player) => ({
@@ -77,6 +78,27 @@ export function AdminControls({
     await Promise.all(updates)
     setIsSavingScores(false)
     setScoreEdits({})
+    await onRefresh()
+  }
+
+  const handleRemoveUser = async (userId: string, userName: string) => {
+    const confirmed = window.confirm(`Remove ${userName} from the league?`)
+    if (!confirmed) return
+
+    setIsRemovingUser(true)
+    const response = await fetch(`/api/users/${userId}`, { method: 'DELETE' })
+    setIsRemovingUser(false)
+
+    if (!response.ok) {
+      const message = await response.text()
+      console.error('Failed to remove user:', message)
+      return
+    }
+
+    if (selectedUserId === userId) {
+      setSelectedUserId(users.find((user) => user.id !== userId)?.id || '')
+    }
+
     await onRefresh()
   }
 
@@ -148,6 +170,24 @@ export function AdminControls({
           >
             {isSavingScores ? 'Saving...' : 'Save Scores'}
           </button>
+        </div>
+      </div>
+
+      <div className="mt-6">
+        <h4 className="text-sm font-semibold text-gray-300 mb-2">Remove User</h4>
+        <div className="space-y-2">
+          {users.map((user) => (
+            <div key={user.id} className="flex items-center justify-between">
+              <span className="text-sm text-gray-200">{user.name}</span>
+              <button
+                onClick={() => handleRemoveUser(user.id, user.name)}
+                disabled={isRemovingUser}
+                className="px-3 py-1 rounded-lg bg-gray-700 hover:bg-gray-600 text-white text-xs disabled:opacity-50"
+              >
+                Remove
+              </button>
+            </div>
+          ))}
         </div>
       </div>
     </div>
