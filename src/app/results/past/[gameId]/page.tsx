@@ -180,8 +180,26 @@ export default function PastGameDetailPage() {
         </div>
 
         <div className="backdrop-blur-xl bg-white/5 p-6 rounded-3xl border border-white/10 shadow-2xl mb-8">
+          <h2 className="text-xl font-semibold text-white mb-4">Scores</h2>
+          <div className="space-y-3">
+            {userGameScores.map((score) => (
+              <div key={score.userId} className="flex items-center justify-between bg-white/5 p-4 rounded-2xl">
+                <div>
+                  <p className="text-white font-semibold">{score.userName}</p>
+                  <p className="text-sm text-gray-400">Picked: {score.pickName}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-white font-bold">{score.points} pts</p>
+                  <p className="text-sm text-gray-400">Season: {score.seasonTotal}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="backdrop-blur-xl bg-white/5 p-6 rounded-3xl border border-white/10 shadow-2xl mb-8">
           <h2 className="text-xl font-semibold text-white mb-4">Player Stats</h2>
-          <div className="space-y-2 max-h-64 overflow-y-auto">
+          <div className="space-y-2">
             {gameResult.playerStats
               .filter((stats) => stats.goals.length > 0 || stats.assists.length > 0)
               .map((stats) => {
@@ -235,24 +253,6 @@ export default function PastGameDetailPage() {
                   </div>
                 )
               })}
-          </div>
-        </div>
-
-        <div className="backdrop-blur-xl bg-white/5 p-6 rounded-3xl border border-white/10 shadow-2xl mb-8">
-          <h2 className="text-xl font-semibold text-white mb-4">Scores</h2>
-          <div className="space-y-3">
-            {userGameScores.map((score) => (
-              <div key={score.userId} className="flex items-center justify-between bg-white/5 p-4 rounded-2xl">
-                <div>
-                  <p className="text-white font-semibold">{score.userName}</p>
-                  <p className="text-sm text-gray-400">Picked: {score.pickName}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-white font-bold">{score.points} pts</p>
-                  <p className="text-sm text-gray-400">Season: {score.seasonTotal}</p>
-                </div>
-              </div>
-            ))}
           </div>
         </div>
       </div>

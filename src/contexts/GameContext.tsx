@@ -55,7 +55,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         const data = await response.json()
         console.log('Fetched users:', data.users?.length || 0)
         if (data.users && Array.isArray(data.users)) {
-          setUsers(data.users.map((u: any) => ({ id: u.id, name: u.name })))
+          setUsers(data.users.map((u: any) => ({ id: u.id, name: u.name, email: u.email })))
           
           // Also update userScores from database
           const scoresMap = new Map<string, number>()

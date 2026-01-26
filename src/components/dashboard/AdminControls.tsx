@@ -4,7 +4,7 @@ import React, { useMemo, useState, useEffect } from 'react'
 import type { Player } from '@/lib/types'
 
 interface AdminControlsProps {
-  users: Array<{ id: string; name: string }>
+  users: Array<{ id: string; name: string; email?: string }>
   roster: Player[]
   currentGameId: string
   onRefresh: () => Promise<void>
@@ -44,7 +44,7 @@ export function AdminControls({
     const userMap = new Map(users.map((user) => [user.id, user]))
     const ordered = pickOrderIds
       .map((id) => userMap.get(id))
-      .filter((user): user is { id: string; name: string } => Boolean(user))
+      .filter((user): user is { id: string; name: string; email?: string } => Boolean(user))
 
     users.forEach((user) => {
       if (!pickOrderIds.includes(user.id)) {
@@ -183,6 +183,7 @@ export function AdminControls({
               {users.map((user) => (
                 <option key={user.id} value={user.id} className="bg-gray-900">
                   {user.name}
+                  {user.email ? ` (${user.email})` : ''}
                 </option>
               ))}
             </select>
@@ -218,7 +219,12 @@ export function AdminControls({
           <div className="space-y-2 max-h-56 overflow-y-auto">
             {users.map((user) => (
               <div key={user.id} className="flex items-center gap-3">
-                <span className="flex-1 text-sm text-gray-200">{user.name}</span>
+                <div className="flex-1">
+                  <span className="text-sm text-gray-200">{user.name}</span>
+                  {user.email && (
+                    <div className="text-xs text-gray-400">{user.email}</div>
+                  )}
+                </div>
                 <input
                   type="number"
                   value={scoreEdits[user.id] ?? userScores.get(user.id) ?? 0}
@@ -243,7 +249,12 @@ export function AdminControls({
         <div className="space-y-2">
           {users.map((user) => (
             <div key={user.id} className="flex items-center justify-between">
-              <span className="text-sm text-gray-200">{user.name}</span>
+              <div>
+                <span className="text-sm text-gray-200">{user.name}</span>
+                {user.email && (
+                  <div className="text-xs text-gray-400">{user.email}</div>
+                )}
+              </div>
               <button
                 onClick={() => handleRemoveUser(user.id, user.name)}
                 disabled={isRemovingUser}
@@ -261,9 +272,14 @@ export function AdminControls({
         <div className="space-y-2">
           {orderedPickUsers.map((user, index) => (
             <div key={user.id} className="flex items-center justify-between">
-              <span className="text-sm text-gray-200">
-                {index + 1}. {user.name}
-              </span>
+              <div>
+                <span className="text-sm text-gray-200">
+                  {index + 1}. {user.name}
+                </span>
+                {user.email && (
+                  <div className="text-xs text-gray-400">{user.email}</div>
+                )}
+              </div>
               <div className="flex gap-2">
                 <button
                   onClick={() => movePickOrder(user.id, 'up')}

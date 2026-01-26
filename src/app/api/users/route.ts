@@ -28,6 +28,7 @@ export async function GET() {
     let formattedUsers: Array<{
       id: string
       name: string
+      email: string
       totalSeasonPoints: number
     }>
 
@@ -53,6 +54,7 @@ export async function GET() {
         formattedUsers = orderedUsers.map((user) => ({
           id: user.id,
           name: user.name,
+          email: user.email,
           totalSeasonPoints: user.score?.totalSeasonPoints || 0,
         }))
       } catch (parseError) {
@@ -61,6 +63,7 @@ export async function GET() {
         formattedUsers = allUsers.map((user) => ({
           id: user.id,
           name: user.name,
+          email: user.email,
           totalSeasonPoints: user.score?.totalSeasonPoints || 0,
         }))
       }
@@ -69,6 +72,7 @@ export async function GET() {
       formattedUsers = allUsers.map((user) => ({
         id: user.id,
         name: user.name,
+        email: user.email,
         totalSeasonPoints: user.score?.totalSeasonPoints || 0,
       }))
     }

@@ -67,5 +67,6 @@ export interface UserScore {
 export interface User {
   id: string
   name: string
+  email?: string
 }
 

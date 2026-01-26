@@ -24,6 +24,7 @@ export async function GET() {
     const timeStr = gameDate.toLocaleTimeString('en-US', {
       hour: 'numeric',
       minute: '2-digit',
+      timeZone: 'America/New_York',
       timeZoneName: 'short',
     })
 
