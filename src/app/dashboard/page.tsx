@@ -157,6 +157,7 @@ export default function Dashboard() {
             currentGameId={currentGame.id}
             onRefresh={refreshGameData}
             userScores={userScores}
+            currentUserId={currentUser.uid}
           />
         )}
 

@@ -25,6 +25,10 @@ export async function DELETE(
       return NextResponse.json({ error: 'userId is required' }, { status: 400 })
     }
 
+    if (userId === authUserId) {
+      return NextResponse.json({ error: 'Cannot remove yourself' }, { status: 400 })
+    }
+
     await prisma.user.delete({ where: { id: userId } })
     return NextResponse.json({ success: true }, { status: 200 })
   } catch (error) {

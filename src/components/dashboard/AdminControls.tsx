@@ -9,6 +9,7 @@ interface AdminControlsProps {
   currentGameId: string
   onRefresh: () => Promise<void>
   userScores: Map<string, number>
+  currentUserId: string
 }
 
 export function AdminControls({
@@ -17,6 +18,7 @@ export function AdminControls({
   currentGameId,
   onRefresh,
   userScores,
+  currentUserId,
 }: AdminControlsProps) {
   const [selectedUserId, setSelectedUserId] = useState(users[0]?.id || '')
   const [selectedPick, setSelectedPick] = useState('')
@@ -82,8 +84,18 @@ export function AdminControls({
   }
 
   const handleRemoveUser = async (userId: string, userName: string) => {
-    const confirmed = window.confirm(`Remove ${userName} from the league?`)
-    if (!confirmed) return
+    if (userId === currentUserId) {
+      window.alert('You cannot remove yourself.')
+      return
+    }
+
+    const confirmation = window.prompt(
+      `Type "${userName}" to confirm removal.`,
+      '',
+    )
+    if (confirmation?.trim() !== userName) {
+      return
+    }
 
     setIsRemovingUser(true)
     const response = await fetch(`/api/users/${userId}`, { method: 'DELETE' })
