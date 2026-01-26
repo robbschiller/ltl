@@ -19,6 +19,8 @@ export default function PastGameDetailPage() {
   const [users, setUsers] = React.useState<Array<{ id: string; name: string }>>([])
   const [userScores, setUserScores] = React.useState<Map<string, number>>(new Map())
   const [roster, setRoster] = React.useState<Player[]>([])
+  const [historyGames, setHistoryGames] = React.useState<Array<{ id: string }>>([])
+  const [pickOrderIds, setPickOrderIds] = React.useState<string[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
 
   React.useEffect(() => {
@@ -32,10 +34,12 @@ export default function PastGameDetailPage() {
     async function fetchData() {
       try {
         setIsLoading(true)
-        const [resultRes, rosterRes, usersRes] = await Promise.all([
+        const [resultRes, rosterRes, usersRes, historyRes, pickOrderRes] = await Promise.all([
           fetch(`/api/game/result?gameId=${gameId}`),
           fetch('/api/nhl/roster?team=DET'),
           fetch('/api/users'),
+          fetch('/api/game/history'),
+          fetch('/api/pick-order'),
         ])
 
         if (resultRes.ok) {
@@ -61,6 +65,20 @@ export default function PastGameDetailPage() {
             setUserScores(scores)
           }
         }
+
+        if (historyRes.ok) {
+          const historyData = await historyRes.json()
+          if (Array.isArray(historyData.games)) {
+            setHistoryGames(historyData.games.map((g: any) => ({ id: String(g.id) })))
+          }
+        }
+
+        if (pickOrderRes.ok) {
+          const pickOrderData = await pickOrderRes.json()
+          if (Array.isArray(pickOrderData.userIds)) {
+            setPickOrderIds(pickOrderData.userIds)
+          }
+        }
       } catch (error) {
         console.error('Error loading past game:', error)
       } finally {
@@ -72,6 +90,32 @@ export default function PastGameDetailPage() {
       fetchData()
     }
   }, [gameId])
+
+  const orderedUsers = useMemo(() => {
+    if (users.length === 0) return []
+
+    const baseOrderIds = pickOrderIds.length > 0 ? pickOrderIds : users.map((user) => user.id)
+    const historyIndex = historyGames.findIndex((g) => g.id === gameId)
+    const shift = historyIndex >= 0 ? historyIndex + 1 : 1
+    const normalizedShift = ((shift % baseOrderIds.length) + baseOrderIds.length) % baseOrderIds.length
+    const rotatedIds = [
+      ...baseOrderIds.slice(normalizedShift),
+      ...baseOrderIds.slice(0, normalizedShift),
+    ]
+
+    const usersById = new Map(users.map((user) => [user.id, user]))
+    const ordered = rotatedIds
+      .map((id) => usersById.get(id))
+      .filter((user): user is { id: string; name: string } => Boolean(user))
+
+    users.forEach((user) => {
+      if (!ordered.find((orderedUser) => orderedUser.id === user.id)) {
+        ordered.push(user)
+      }
+    })
+
+    return ordered
+  }, [users, historyGames, gameId, pickOrderIds])
 
   const recalculatedScores = useMemo(() => {
     if (!game || !gameResult || picks.length === 0) {
@@ -130,23 +174,22 @@ export default function PastGameDetailPage() {
     )
   }
 
-  const userGameScores = picks.map((pick) => {
-    const user = users.find((u) => u.id === pick.userId)
-    const points = recalculatedScores.get(pick.userId) ?? 0
-    const pickName =
-      pick.playerId === 'team'
+  const userGameScores = orderedUsers.map((user) => {
+    const pick = picks.find((p) => p.userId === user.id)
+    const points = pick ? recalculatedScores.get(user.id) ?? 0 : 0
+    const pickName = pick
+      ? pick.playerId === 'team'
         ? 'The Team'
         : roster.find((p) => p.id === pick.playerId)?.name || 'Unknown Player'
+      : 'No pick'
     return {
-      userId: pick.userId,
-      userName: user?.name || 'Unknown',
+      userId: user.id,
+      userName: user.name,
       points,
       pickName,
-      seasonTotal: userScores.get(pick.userId) || 0,
+      seasonTotal: userScores.get(user.id) || 0,
     }
   })
-
-  userGameScores.sort((a, b) => b.points - a.points)
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-red-950 py-8">

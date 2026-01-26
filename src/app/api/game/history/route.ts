@@ -18,6 +18,7 @@ export async function GET() {
           year: 'numeric',
           month: 'long',
           day: 'numeric',
+          timeZone: 'America/New_York',
         })
         const timeStr = gameDate.toLocaleTimeString('en-US', {
           hour: 'numeric',
