@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState, useEffect } from 'react'
 import type { Player } from '@/lib/types'
+import { getTopScorerIds } from '@/lib/gameSimulator'
 
 interface AdminControlsProps {
   users: Array<{ id: string; name: string; email?: string }>
@@ -30,9 +31,10 @@ export function AdminControls({
   const [isSavingOrder, setIsSavingOrder] = useState(false)
 
   const rosterOptions = useMemo(() => {
+    const topScorerIds = getTopScorerIds(roster)
     return roster.map((player) => ({
       value: player.id,
-      label: `#${player.number} ${player.name} (${player.position})`,
+      label: `#${player.number} ${player.name} (${player.position})${topScorerIds.has(player.id) ? '' : ' — Lone Wolf'}`,
     }))
   }, [roster])
 

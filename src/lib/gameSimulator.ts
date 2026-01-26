@@ -8,6 +8,18 @@ import type {
 import { isForwardPosition, isDefensemanPosition, isGoaliePosition, normalizePosition, findPlayerStats } from './playerUtils'
 import { SCORING } from './scoringConstants'
 
+export function getTopScorerIds(roster: Player[], limit = SCORING.LONE_WOLF.TOP_POINTS_COUNT): Set<string> {
+  const sorted = [...roster].sort((a, b) => (b.points ?? 0) - (a.points ?? 0))
+  return new Set(sorted.slice(0, limit).map((player) => player.id))
+}
+
+function calculateLoneWolfBonus(playerStats: GamePlayerStats, isLoneWolf: boolean): number {
+  if (!isLoneWolf) return 0
+  if (playerStats.goals.length > 0) return SCORING.LONE_WOLF.GOAL_BONUS
+  if (playerStats.assists.length > 0) return SCORING.LONE_WOLF.ASSIST_BONUS
+  return 0
+}
+
 /**
  * Calculates points for a goalie based on goals allowed and assists
  * Note: Empty netters and shootouts do not count against the goalie
@@ -124,15 +136,17 @@ export function calculateDefensemanScore(
 export function calculatePlayerScore(
   playerStats: GamePlayerStats,
   gameResult: Game,
+  options?: { isLoneWolf?: boolean },
 ): number {
   const position = normalizePosition(playerStats.position)
+  const loneWolfBonus = calculateLoneWolfBonus(playerStats, Boolean(options?.isLoneWolf))
 
   if (isGoaliePosition(position)) {
-    return calculateGoalieScore(playerStats, gameResult)
+    return calculateGoalieScore(playerStats, gameResult) + loneWolfBonus
   } else if (isForwardPosition(position)) {
-    return calculateForwardScore(playerStats)
+    return calculateForwardScore(playerStats) + loneWolfBonus
   } else if (isDefensemanPosition(position)) {
-    return calculateDefensemanScore(playerStats)
+    return calculateDefensemanScore(playerStats) + loneWolfBonus
   }
 
   // Unknown position - should not happen with normalized positions
@@ -162,6 +176,7 @@ export function calculateUserScores(
   game: Game,
 ): Map<string, number> {
   const userScores = new Map<string, number>()
+  const topScorerIds = getTopScorerIds(roster)
 
   if (process.env.NODE_ENV === 'development') {
     console.log('[CALCULATE-USER-SCORES] Starting calculation:', {
@@ -183,7 +198,8 @@ export function calculateUserScores(
         const playerStats = findPlayerStats(rosterPlayer, gameResult.playerStats)
         
         if (playerStats) {
-          const points = calculatePlayerScore(playerStats, game)
+          const isLoneWolf = !topScorerIds.has(rosterPlayer.id)
+          const points = calculatePlayerScore(playerStats, game, { isLoneWolf })
           userScores.set(pick.userId, points)
           
           if (process.env.NODE_ENV === 'development') {

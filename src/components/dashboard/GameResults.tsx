@@ -3,7 +3,7 @@
 import React from 'react'
 import { TrophyIcon, TargetIcon } from 'lucide-react'
 import type { Game, GameResult, UserPick, Player } from '@/lib/types'
-import { calculatePlayerScore, calculateTeamScore } from '@/lib/gameSimulator'
+import { calculatePlayerScore, calculateTeamScore, getTopScorerIds } from '@/lib/gameSimulator'
 
 interface GameResultsProps {
   game: Game
@@ -34,6 +34,8 @@ export function GameResults({
     return null
   }
 
+  const topScorerIds = getTopScorerIds(roster)
+
   // Calculate user scores for this game
   const userGameScores: UserGameScore[] = picks.map((pick) => {
     const user = users.find((u) => u.id === pick.userId)
@@ -50,7 +52,8 @@ export function GameResults({
         (stats) => stats.playerId === pick.playerId,
       )
       if (playerStats) {
-        points = calculatePlayerScore(playerStats, game)
+        const isLoneWolf = !topScorerIds.has(pick.playerId)
+        points = calculatePlayerScore(playerStats, game, { isLoneWolf })
         const player = roster.find((p) => p.id === pick.playerId)
         pickName = player ? `#${player.number} ${player.name}` : 'Unknown'
       }

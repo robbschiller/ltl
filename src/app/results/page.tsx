@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useGame } from '@/contexts/GameContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { TrophyIcon, ArrowLeftIcon, TargetIcon } from 'lucide-react'
-import { calculatePlayerScore } from '@/lib/gameSimulator'
+import { calculatePlayerScore, getTopScorerIds } from '@/lib/gameSimulator'
 import { findPlayerStats } from '@/lib/playerUtils'
 import type { Player } from '@/lib/types'
 
@@ -35,6 +35,7 @@ export default function ResultsPage() {
   // We need roster data - for now, we'll need to fetch it or pass it
   // For the results page, we can make a simplified version that doesn't require full roster
   const [roster, setRoster] = React.useState<Player[]>([])
+  const topScorerIds = useMemo(() => getTopScorerIds(roster), [roster])
 
   React.useEffect(() => {
     async function fetchRoster() {
@@ -74,7 +75,8 @@ export default function ResultsPage() {
           
           if (playerStats) {
             // Use the exact same calculation as the player stats area
-            const points = calculatePlayerScore(playerStats, completedGame)
+            const isLoneWolf = !topScorerIds.has(player.id)
+            const points = calculatePlayerScore(playerStats, completedGame, { isLoneWolf })
             scores.set(pick.userId, points)
             
             // Only log in development
@@ -102,7 +104,7 @@ export default function ResultsPage() {
     })
     
     return scores
-  }, [gameResult, completedGame, gamePicks, roster])
+  }, [gameResult, completedGame, gamePicks, roster, topScorerIds])
 
   // Debug logging - only log if there's an issue
   React.useEffect(() => {
@@ -341,7 +343,8 @@ export default function ResultsPage() {
                   return { stats, player: fallbackPlayer, points: calculatePlayerScore(stats, completedGame) }
                 }
                 
-                return { stats, player, points: calculatePlayerScore(stats, completedGame) }
+                const isLoneWolf = !topScorerIds.has(player.id)
+                return { stats, player, points: calculatePlayerScore(stats, completedGame, { isLoneWolf }) }
               })
               .filter(Boolean)
               .sort((a, b) => {

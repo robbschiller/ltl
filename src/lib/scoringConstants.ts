@@ -33,6 +33,11 @@ export const SCORING = {
     GOALS_1_2: 3,
     ASSIST: 5,
   },
+  LONE_WOLF: {
+    GOAL_BONUS: 5,
+    ASSIST_BONUS: 3,
+    TOP_POINTS_COUNT: 8,
+  },
   TEAM: {
     GOALS_THRESHOLD: 3, // Points start after this many goals
   },

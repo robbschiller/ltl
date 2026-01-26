@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react'
 import { UserIcon, LockIcon, CheckCircleIcon, ClockIcon } from 'lucide-react'
 import { useGame } from '@/contexts/GameContext'
+import { getTopScorerIds } from '@/lib/gameSimulator'
 import type { Player } from '@/lib/types'
 
 interface PickOrderProps {
@@ -58,6 +59,8 @@ export function PickOrder({ currentUserId, roster }: PickOrderProps) {
   // Check if all users have made picks
   const allPicksMade = picksLocked && !isGameCompleted
 
+  const topScorerIds = useMemo(() => getTopScorerIds(roster), [roster])
+
   // Get already picked player IDs (exclude 'team')
   const pickedPlayerIds = usersWithPicks
     .filter((user) => user.pick && user.pick !== 'team')
@@ -85,6 +88,8 @@ export function PickOrder({ currentUserId, roster }: PickOrderProps) {
     
     return true
   })
+
+  const isLoneWolf = (playerId: string) => !topScorerIds.has(playerId)
 
   // Roster already comes with stats from the API, sorted by points
   // Just ensure we have the right type
@@ -266,6 +271,7 @@ export function PickOrder({ currentUserId, roster }: PickOrderProps) {
                             className="bg-gray-900"
                           >
                             #{player.number} {player.name} ({player.position})
+                            {isLoneWolf(player.id) ? ' — Lone Wolf' : ''}
                           </option>
                         ))}
                       </select>
@@ -301,7 +307,14 @@ export function PickOrder({ currentUserId, roster }: PickOrderProps) {
                       </span>
                     </div>
                     <div className="min-w-0">
-                      <p className="text-white font-semibold truncate">{player.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-white font-semibold truncate">{player.name}</p>
+                        {isLoneWolf(player.id) && (
+                          <span className="text-xs bg-yellow-500/20 text-yellow-300 px-2 py-0.5 rounded-full">
+                            Lone Wolf
+                          </span>
+                        )}
+                      </div>
                       <p className="text-gray-400 text-sm">{player.position}</p>
                     </div>
                   </div>

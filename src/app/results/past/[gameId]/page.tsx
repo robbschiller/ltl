@@ -3,7 +3,7 @@
 import React, { useMemo } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
-import { calculatePlayerScore } from '@/lib/gameSimulator'
+import { calculatePlayerScore, getTopScorerIds } from '@/lib/gameSimulator'
 import { findPlayerStats } from '@/lib/playerUtils'
 import type { Player, Game, GameResult, UserPick } from '@/lib/types'
 
@@ -22,6 +22,7 @@ export default function PastGameDetailPage() {
   const [historyGames, setHistoryGames] = React.useState<Array<{ id: string }>>([])
   const [pickOrderIds, setPickOrderIds] = React.useState<string[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
+  const topScorerIds = useMemo(() => getTopScorerIds(roster), [roster])
 
   React.useEffect(() => {
     if (!authLoading && !currentUser) {
@@ -132,7 +133,8 @@ export default function PastGameDetailPage() {
         if (player) {
           const playerStats = findPlayerStats(player, gameResult.playerStats)
           if (playerStats) {
-            scores.set(pick.userId, calculatePlayerScore(playerStats, game))
+            const isLoneWolf = !topScorerIds.has(player.id)
+            scores.set(pick.userId, calculatePlayerScore(playerStats, game, { isLoneWolf }))
           } else {
             scores.set(pick.userId, 0)
           }
@@ -143,7 +145,7 @@ export default function PastGameDetailPage() {
     })
 
     return scores
-  }, [game, gameResult, picks, roster])
+  }, [game, gameResult, picks, roster, topScorerIds])
 
   if (isLoading) {
     return (
@@ -249,7 +251,8 @@ export default function PastGameDetailPage() {
                 const player = roster.find((p) => p.id === stats.playerId)
                 if (!player) return null
 
-                const points = calculatePlayerScore(stats, game)
+                const isLoneWolf = !topScorerIds.has(stats.playerId)
+                const points = calculatePlayerScore(stats, game, { isLoneWolf })
                 const goalCount = stats.goals.length
                 const assistCount = stats.assists.length
                 const shorthandedGoals = stats.goals.filter((g) => g.isShorthanded).length

@@ -6,6 +6,7 @@ import {
   getGameLanding,
   getGamePlayByPlay,
   getScoreForDate,
+  getTeamPlayerStats,
   getTeamRosterCurrent,
 } from '@/lib/nhlApi'
 import { parseRealGameResults } from '@/lib/parseGameResults'
@@ -24,6 +25,21 @@ function toDateKey(dateStr?: string | null) {
 
 async function getCurrentRoster(): Promise<Player[]> {
   const rosterData = await getTeamRosterCurrent(RED_WINGS_ABBREV)
+  const now = new Date()
+  const currentYear = now.getFullYear()
+  const month = now.getMonth()
+  const seasonStartYear = month >= 9 ? currentYear : currentYear - 1
+  const seasonId = parseInt(`${seasonStartYear}${seasonStartYear + 1}`)
+  const statsData = await getTeamPlayerStats(RED_WINGS_ABBREV, seasonId, 2)
+  const statsMap = new Map<number, { goals: number; assists: number; points: number; gamesPlayed: number }>()
+  statsData.skaters.forEach((stat) => {
+    statsMap.set(stat.playerId, {
+      goals: stat.goals,
+      assists: stat.assists,
+      points: stat.points,
+      gamesPlayed: stat.gamesPlayed,
+    })
+  })
   const allPlayers = [
     ...rosterData.forwards,
     ...rosterData.defensemen,
@@ -35,6 +51,9 @@ async function getCurrentRoster(): Promise<Player[]> {
     name: formatPlayerName(player),
     number: String(player.sweaterNumber || ''),
     position: player.positionCode || player.position || 'F',
+    ...(statsMap.has(player.id)
+      ? statsMap.get(player.id)
+      : { goals: 0, assists: 0, points: 0, gamesPlayed: 0 }),
   }))
 }
 
