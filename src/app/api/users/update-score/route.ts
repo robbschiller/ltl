@@ -3,6 +3,20 @@ import { prisma } from '@/lib/prisma'
 
 export async function POST(request: NextRequest) {
   try {
+    const authUserId = request.cookies.get('userId')?.value
+    if (!authUserId) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+    }
+
+    const authUser = await prisma.user.findUnique({
+      where: { id: authUserId },
+      select: { isAdmin: true },
+    })
+
+    if (!authUser?.isAdmin) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
     const { userId, totalSeasonPoints } = await request.json()
 
     if (!userId || typeof totalSeasonPoints !== 'number') {

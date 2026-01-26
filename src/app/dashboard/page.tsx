@@ -7,6 +7,7 @@ import { useGame } from '@/contexts/GameContext'
 import { NextGame } from '@/components/dashboard/NextGame'
 import { PickOrder } from '@/components/dashboard/PickOrder'
 import { GameResults } from '@/components/dashboard/GameResults'
+import { AdminControls } from '@/components/dashboard/AdminControls'
 import { LoaderIcon, TrophyIcon } from 'lucide-react'
 
 interface RosterPlayer {
@@ -147,6 +148,17 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+
+        {/* Admin Controls */}
+        {currentUser?.isAdmin && currentGame && (
+          <AdminControls
+            users={users}
+            roster={roster}
+            currentGameId={currentGame.id}
+            onRefresh={refreshGameData}
+            userScores={userScores}
+          />
+        )}
 
         {/* Game Results */}
         {latestGameResult && latestCompletedGame && (

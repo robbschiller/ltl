@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
 
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'timothy.schiller@gmail.com').toLowerCase()
+
 export async function POST(request: NextRequest) {
   try {
     const { email, password } = await request.json()
@@ -36,14 +38,23 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    let effectiveUser = user
+
+    if (!user.isAdmin && user.email.toLowerCase() === ADMIN_EMAIL) {
+      effectiveUser = await prisma.user.update({
+        where: { id: user.id },
+        data: { isAdmin: true },
+      })
+    }
+
     // Create response with user data (excluding password)
     const response = NextResponse.json(
       {
         user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          isAdmin: user.isAdmin,
+          id: effectiveUser.id,
+          email: effectiveUser.email,
+          name: effectiveUser.name,
+          isAdmin: effectiveUser.isAdmin,
         },
       },
       { status: 200 }

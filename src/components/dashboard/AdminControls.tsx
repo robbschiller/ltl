@@ -1,0 +1,155 @@
+"use client"
+
+import React, { useMemo, useState } from 'react'
+import type { Player } from '@/lib/types'
+
+interface AdminControlsProps {
+  users: Array<{ id: string; name: string }>
+  roster: Player[]
+  currentGameId: string
+  onRefresh: () => Promise<void>
+  userScores: Map<string, number>
+}
+
+export function AdminControls({
+  users,
+  roster,
+  currentGameId,
+  onRefresh,
+  userScores,
+}: AdminControlsProps) {
+  const [selectedUserId, setSelectedUserId] = useState(users[0]?.id || '')
+  const [selectedPick, setSelectedPick] = useState('')
+  const [scoreEdits, setScoreEdits] = useState<Record<string, string>>({})
+  const [isSavingPick, setIsSavingPick] = useState(false)
+  const [isSavingScores, setIsSavingScores] = useState(false)
+
+  const rosterOptions = useMemo(() => {
+    return roster.map((player) => ({
+      value: player.id,
+      label: `#${player.number} ${player.name} (${player.position})`,
+    }))
+  }, [roster])
+
+  const handlePickSubmit = async () => {
+    if (!selectedUserId || !selectedPick) return
+
+    setIsSavingPick(true)
+    const response = await fetch('/api/picks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: selectedUserId,
+        gameId: currentGameId,
+        playerId: selectedPick,
+      }),
+    })
+    setIsSavingPick(false)
+
+    if (!response.ok) {
+      const message = await response.text()
+      console.error('Admin pick failed:', message)
+      return
+    }
+
+    await onRefresh()
+    setSelectedPick('')
+  }
+
+  const handleScoreChange = (userId: string, value: string) => {
+    setScoreEdits((prev) => ({ ...prev, [userId]: value }))
+  }
+
+  const handleSaveScores = async () => {
+    setIsSavingScores(true)
+    const updates = users.map(async (user) => {
+      const value = scoreEdits[user.id]
+      if (value === undefined || value === '') return
+      const totalSeasonPoints = Number(value)
+      if (Number.isNaN(totalSeasonPoints)) return
+
+      await fetch('/api/users/update-score', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, totalSeasonPoints }),
+      })
+    })
+    await Promise.all(updates)
+    setIsSavingScores(false)
+    setScoreEdits({})
+    await onRefresh()
+  }
+
+  return (
+    <div className="backdrop-blur-xl bg-white/5 p-6 rounded-3xl border border-white/10 shadow-2xl mb-8">
+      <h3 className="text-lg font-semibold text-white mb-4">Admin Controls</h3>
+
+      <div className="grid gap-6 md:grid-cols-2">
+        <div>
+          <h4 className="text-sm font-semibold text-gray-300 mb-2">Pick For User</h4>
+          <div className="space-y-3">
+            <select
+              value={selectedUserId}
+              onChange={(event) => setSelectedUserId(event.target.value)}
+              className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2 text-white"
+            >
+              {users.map((user) => (
+                <option key={user.id} value={user.id} className="bg-gray-900">
+                  {user.name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={selectedPick}
+              onChange={(event) => setSelectedPick(event.target.value)}
+              className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2 text-white"
+            >
+              <option value="" className="bg-gray-900">
+                Select pick...
+              </option>
+              <option value="team" className="bg-gray-900">
+                The Team
+              </option>
+              {rosterOptions.map((option) => (
+                <option key={option.value} value={option.value} className="bg-gray-900">
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handlePickSubmit}
+              disabled={!selectedUserId || !selectedPick || isSavingPick}
+              className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+            >
+              {isSavingPick ? 'Saving...' : 'Set Pick'}
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <h4 className="text-sm font-semibold text-gray-300 mb-2">Adjust Scores</h4>
+          <div className="space-y-2 max-h-56 overflow-y-auto">
+            {users.map((user) => (
+              <div key={user.id} className="flex items-center gap-3">
+                <span className="flex-1 text-sm text-gray-200">{user.name}</span>
+                <input
+                  type="number"
+                  value={scoreEdits[user.id] ?? userScores.get(user.id) ?? 0}
+                  onChange={(event) => handleScoreChange(user.id, event.target.value)}
+                  className="w-24 bg-white/10 border border-white/20 rounded-lg px-2 py-1 text-white"
+                />
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={handleSaveScores}
+            disabled={isSavingScores}
+            className="mt-3 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+          >
+            {isSavingScores ? 'Saving...' : 'Save Scores'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}

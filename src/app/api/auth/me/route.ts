@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'timothy.schiller@gmail.com').toLowerCase()
+
 export async function GET(request: NextRequest) {
   try {
     const userId = request.cookies.get('userId')?.value
@@ -27,7 +29,23 @@ export async function GET(request: NextRequest) {
       return response
     }
 
-    return NextResponse.json({ user }, { status: 200 })
+    let effectiveUser = user
+
+    if (user && !user.isAdmin && user.email.toLowerCase() === ADMIN_EMAIL) {
+      effectiveUser = await prisma.user.update({
+        where: { id: user.id },
+        data: { isAdmin: true },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          isAdmin: true,
+          createdAt: true,
+        },
+      })
+    }
+
+    return NextResponse.json({ user: effectiveUser }, { status: 200 })
   } catch (error) {
     console.error('Get user error:', error)
     return NextResponse.json(

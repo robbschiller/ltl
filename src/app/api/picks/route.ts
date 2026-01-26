@@ -44,8 +44,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (userId && userId !== authUserId) {
-      return NextResponse.json({ error: 'Cannot pick for another user' }, { status: 403 })
+    const authUser = await prisma.user.findUnique({
+      where: { id: authUserId },
+      select: { id: true, isAdmin: true },
+    })
+
+    if (!authUser) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
     }
 
     const game = await prisma.game.findUnique({ where: { id: gameId } })
@@ -55,6 +60,12 @@ export async function POST(request: NextRequest) {
 
     if (game.status === 'completed' || game.lockedAt) {
       return NextResponse.json({ error: 'Picks are locked' }, { status: 403 })
+    }
+
+    const targetUserId = userId && authUser.isAdmin ? userId : authUserId
+
+    if (userId && !authUser.isAdmin && userId !== authUserId) {
+      return NextResponse.json({ error: 'Cannot pick for another user' }, { status: 403 })
     }
 
     const pickOrder = await prisma.pickOrder.findFirst({
@@ -71,7 +82,7 @@ export async function POST(request: NextRequest) {
         const pickedUserIds = new Set(existingPicks.map((pick) => pick.userId))
         const currentPicker = userIds.find((id) => !pickedUserIds.has(id))
 
-        if (currentPicker && currentPicker !== authUserId) {
+        if (!authUser.isAdmin && currentPicker && currentPicker !== authUserId) {
           return NextResponse.json({ error: 'Not your turn to pick' }, { status: 403 })
         }
       } catch (error) {
@@ -82,7 +93,7 @@ export async function POST(request: NextRequest) {
     await prisma.pick.upsert({
       where: {
         userId_gameId: {
-          userId: authUserId,
+          userId: targetUserId,
           gameId,
         },
       },
@@ -91,7 +102,7 @@ export async function POST(request: NextRequest) {
         playerPosition: playerPosition || null,
       },
       create: {
-        userId: authUserId,
+        userId: targetUserId,
         gameId,
         playerId,
         playerPosition: playerPosition || null,
