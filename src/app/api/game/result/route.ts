@@ -5,6 +5,7 @@ import {
   getGameBoxscore,
   getGameLanding,
   getGamePlayByPlay,
+  getRedWingsCurrentSeasonSchedule,
   getTeamRosterCurrent,
 } from '@/lib/nhlApi'
 import { parseRealGameResults } from '@/lib/parseGameResults'
@@ -37,38 +38,94 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'gameId is required' }, { status: 400 })
     }
 
+    const numericGameId = Number(gameId)
+    if (Number.isNaN(numericGameId)) {
+      return NextResponse.json({ error: 'gameId must be numeric' }, { status: 400 })
+    }
+
     const game = await prisma.game.findUnique({
       where: { id: gameId },
     })
 
+    let scheduleGame: any = null
     if (!game || !game.nhlGameId || !game.finalizedAt) {
+      const scheduleGames = await getRedWingsCurrentSeasonSchedule()
+      scheduleGame = scheduleGames.find((scheduled) => String(scheduled.id) === gameId)
+      if (!scheduleGame) {
+        return NextResponse.json({ game: null }, { status: 200 })
+      }
+    }
+
+    const nhlGameId = game?.nhlGameId ?? scheduleGame?.id
+    if (!nhlGameId) {
       return NextResponse.json({ game: null }, { status: 200 })
     }
 
     const [boxscoreRaw, landing, playByPlay, roster, picks] = await Promise.all([
-      getGameBoxscore(game.nhlGameId),
-      getGameLanding(game.nhlGameId),
-      getGamePlayByPlay(game.nhlGameId).catch(() => null),
+      getGameBoxscore(nhlGameId),
+      getGameLanding(nhlGameId),
+      getGamePlayByPlay(nhlGameId).catch(() => null),
       getCurrentRoster(),
-      prisma.pick.findMany({ where: { gameId: game.id } }),
+      prisma.pick.findMany({ where: { gameId: game?.id ?? gameId } }),
     ])
     const boxscore = (boxscoreRaw as any)?.boxscore || boxscoreRaw
 
+    const fallbackGame: AppGame | null = scheduleGame
+      ? (() => {
+          const isHome = scheduleGame.homeTeam.abbrev === 'DET'
+          const opponent = isHome ? scheduleGame.awayTeam : scheduleGame.homeTeam
+          const redWings = isHome ? scheduleGame.homeTeam : scheduleGame.awayTeam
+          const gameDate = new Date(scheduleGame.startTimeUTC)
+          const dateStr = gameDate.toLocaleDateString('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+          })
+          const timeStr = gameDate.toLocaleTimeString('en-US', {
+            hour: 'numeric',
+            minute: '2-digit',
+            timeZoneName: 'short',
+          })
+          const lastPeriodType = scheduleGame.gameOutcome?.lastPeriodType
+          const wentToOT = lastPeriodType === 'OT' || lastPeriodType === 'SO'
+          const shootoutOccurred = lastPeriodType === 'SO'
+
+          return {
+            id: String(scheduleGame.id),
+            opponent: opponent.placeName.default + ' ' + opponent.commonName.default,
+            opponentLogo: opponent.logo,
+            date: dateStr,
+            time: timeStr,
+            venue: scheduleGame.venue.default,
+            isHome,
+            status: 'completed',
+            teamGoals: redWings.score ?? 0,
+            opponentGoals: opponent.score ?? 0,
+            wentToOT,
+            emptyNetGoals: 0,
+            shootoutOccurred,
+            gameId: scheduleGame.id,
+            startTimeUTC: scheduleGame.startTimeUTC,
+          }
+        })()
+      : null
+
     const gameForParsing: AppGame = {
-      id: game.id,
-      opponent: game.opponent,
-      opponentLogo: game.opponentLogo,
-      date: game.date,
-      time: game.time,
-      venue: game.venue,
-      isHome: game.isHome,
+      id: game?.id ?? fallbackGame?.id ?? String(nhlGameId),
+      opponent: game?.opponent ?? fallbackGame?.opponent ?? '',
+      opponentLogo: game?.opponentLogo ?? fallbackGame?.opponentLogo ?? '',
+      date: game?.date ?? fallbackGame?.date ?? '',
+      time: game?.time ?? fallbackGame?.time ?? '',
+      venue: game?.venue ?? fallbackGame?.venue ?? '',
+      isHome: game?.isHome ?? fallbackGame?.isHome ?? false,
       status: 'completed',
-      teamGoals: game.teamGoals || 0,
-      opponentGoals: game.opponentGoals || 0,
-      wentToOT: game.wentToOT,
-      emptyNetGoals: game.emptyNetGoals,
-      shootoutOccurred: game.shootoutOccurred,
-      gameId: game.nhlGameId || undefined,
+      teamGoals: game?.teamGoals ?? fallbackGame?.teamGoals ?? 0,
+      opponentGoals: game?.opponentGoals ?? fallbackGame?.opponentGoals ?? 0,
+      wentToOT: game?.wentToOT ?? fallbackGame?.wentToOT ?? false,
+      emptyNetGoals: game?.emptyNetGoals ?? fallbackGame?.emptyNetGoals ?? 0,
+      shootoutOccurred: game?.shootoutOccurred ?? fallbackGame?.shootoutOccurred ?? false,
+      gameId: nhlGameId,
     }
 
     const gameResult = parseRealGameResults(
@@ -87,7 +144,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ game: null }, { status: 200 })
     }
 
-    return NextResponse.json({ game, gameResult, picks }, { status: 200 })
+    const responseGame = game ?? fallbackGame
+    return NextResponse.json({ game: responseGame, gameResult, picks }, { status: 200 })
   } catch (error) {
     console.error('Error fetching game result:', error)
     return NextResponse.json({ error: 'Failed to fetch game result' }, { status: 500 })

@@ -180,6 +180,65 @@ export default function PastGameDetailPage() {
         </div>
 
         <div className="backdrop-blur-xl bg-white/5 p-6 rounded-3xl border border-white/10 shadow-2xl mb-8">
+          <h2 className="text-xl font-semibold text-white mb-4">Player Stats</h2>
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {gameResult.playerStats
+              .filter((stats) => stats.goals.length > 0 || stats.assists.length > 0)
+              .map((stats) => {
+                const player = roster.find((p) => p.id === stats.playerId)
+                if (!player) return null
+
+                const points = calculatePlayerScore(stats, game)
+                const goalCount = stats.goals.length
+                const assistCount = stats.assists.length
+                const shorthandedGoals = stats.goals.filter((g) => g.isShorthanded).length
+                const otGoals = stats.goals.filter((g) => g.isOTGoal).length
+                const shorthandedAssists = stats.assists.filter((a) => a.isShorthanded).length
+
+                return (
+                  <div
+                    key={stats.playerId}
+                    className="bg-white/5 p-4 rounded-xl border border-white/10"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <p className="text-white font-semibold">
+                          #{player.number} {player.name}
+                        </p>
+                        <p className="text-gray-400 text-sm">{player.position}</p>
+                      </div>
+                      <div className="flex gap-4 text-center">
+                        {goalCount > 0 && (
+                          <div>
+                            <p className="text-white font-bold">{goalCount}G</p>
+                            {shorthandedGoals > 0 && (
+                              <p className="text-xs text-blue-400">{shorthandedGoals} SH</p>
+                            )}
+                            {otGoals > 0 && (
+                              <p className="text-xs text-orange-400">{otGoals} OT</p>
+                            )}
+                          </div>
+                        )}
+                        {assistCount > 0 && (
+                          <div>
+                            <p className="text-white font-bold">{assistCount}A</p>
+                            {shorthandedAssists > 0 && (
+                              <p className="text-xs text-blue-400">{shorthandedAssists} SH</p>
+                            )}
+                          </div>
+                        )}
+                        <div>
+                          <p className="text-red-300 font-bold">{points} PTS</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+          </div>
+        </div>
+
+        <div className="backdrop-blur-xl bg-white/5 p-6 rounded-3xl border border-white/10 shadow-2xl mb-8">
           <h2 className="text-xl font-semibold text-white mb-4">Scores</h2>
           <div className="space-y-3">
             {userGameScores.map((score) => (
