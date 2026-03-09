@@ -1,9 +1,9 @@
 "use client"
 
 import React from 'react'
-import { TrophyIcon, TargetIcon } from 'lucide-react'
+import { TrophyIcon } from 'lucide-react'
 import type { Game, GameResult, UserPick, Player } from '@/lib/types'
-import { calculatePlayerScore, calculateTeamScore, getTopScorerIds } from '@/lib/gameSimulator'
+import { calculatePlayerScore, calculateUserScores, getTopScorerIds } from '@/lib/gameSimulator'
 
 interface GameResultsProps {
   game: Game
@@ -34,29 +34,22 @@ export function GameResults({
     return null
   }
 
+  const scoreMap = calculateUserScores(picks, gameResult, roster, game)
   const topScorerIds = getTopScorerIds(roster)
 
   // Calculate user scores for this game
   const userGameScores: UserGameScore[] = picks.map((pick) => {
     const user = users.find((u) => u.id === pick.userId)
-    let points = 0
+    const points = scoreMap.get(pick.userId) ?? 0
     let pickName = ''
     let pickType: 'player' | 'team' = 'player'
 
     if (pick.playerId === 'team') {
-      points = calculateTeamScore(game.teamGoals)
       pickName = 'The Team'
       pickType = 'team'
     } else {
-      const playerStats = gameResult.playerStats.find(
-        (stats) => stats.playerId === pick.playerId,
-      )
-      if (playerStats) {
-        const isLoneWolf = !topScorerIds.has(pick.playerId)
-        points = calculatePlayerScore(playerStats, game, { isLoneWolf })
-        const player = roster.find((p) => p.id === pick.playerId)
-        pickName = player ? `#${player.number} ${player.name}` : 'Unknown'
-      }
+      const player = roster.find((p) => p.id === pick.playerId)
+      pickName = player ? `#${player.number} ${player.name}` : 'Unknown'
     }
 
     return {
@@ -117,7 +110,8 @@ export function GameResults({
               const player = roster.find((p) => p.id === stats.playerId)
               if (!player) return null
 
-              const points = calculatePlayerScore(stats, game)
+              const isLoneWolf = !topScorerIds.has(stats.playerId)
+              const points = calculatePlayerScore(stats, game, { isLoneWolf })
               const goalCount = stats.goals.length
               const assistCount = stats.assists.length
               const shorthandedGoals = stats.goals.filter((g) => g.isShorthanded).length

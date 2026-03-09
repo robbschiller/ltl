@@ -17,7 +17,7 @@ export interface Game {
   time: string
   venue: string
   isHome: boolean
-  status: 'upcoming' | 'completed'
+  status: 'upcoming' | 'live' | 'completed'
   teamGoals: number
   opponentGoals: number
   wentToOT: boolean
@@ -25,10 +25,14 @@ export interface Game {
   shootoutOccurred: boolean
   // Optional NHL API fields
   gameId?: number
-  nhlGameData?: any
+  nhlGameData?: unknown
   startTimeUTC?: string
   lockedAt?: string
   finalizedAt?: string
+  gameState?: string
+  period?: number
+  clock?: string
+  inIntermission?: boolean
 }
 
 export interface GamePlayerStats {
@@ -69,4 +73,3 @@ export interface User {
   name: string
   email?: string
 }
-

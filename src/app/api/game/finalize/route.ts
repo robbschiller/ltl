@@ -92,7 +92,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ status: 'already-finalized', gameId: game.id }, { status: 200 })
     }
 
-    let nhlGameId = game.nhlGameId
+    const nhlGameId = game.nhlGameId
 
     if (!nhlGameId) {
       return NextResponse.json(
@@ -124,7 +124,8 @@ export async function GET(request: NextRequest) {
       getGamePlayByPlay(nhlGameId).catch(() => null),
       getCurrentRoster(),
     ])
-    const boxscore = (boxscoreRaw as any)?.boxscore || boxscoreRaw
+    const boxscoreContainer = boxscoreRaw as { boxscore?: unknown }
+    const boxscore = boxscoreContainer.boxscore || boxscoreRaw
 
     const gameForParsing: AppGame = {
       id: game.id,
@@ -171,8 +172,6 @@ export async function GET(request: NextRequest) {
     }))
     const scores = calculateUserScores(picks, result, roster, gameForParsing)
 
-    const userIds = Array.from(scores.keys())
-
     await prisma.$transaction(async (tx) => {
       await tx.game.update({
         where: { id: game.id },
@@ -204,16 +203,20 @@ export async function GET(request: NextRequest) {
         })
       }
 
-      for (const userId of userIds) {
+      const allUsers = await tx.user.findMany({
+        select: { id: true },
+      })
+
+      for (const user of allUsers) {
         const sum = await tx.gameUserScore.aggregate({
-          where: { userId },
+          where: { userId: user.id },
           _sum: { points: true },
         })
 
         await tx.userScore.upsert({
-          where: { userId },
+          where: { userId: user.id },
           update: { totalSeasonPoints: sum._sum.points || 0 },
-          create: { userId, totalSeasonPoints: sum._sum.points || 0 },
+          create: { userId: user.id, totalSeasonPoints: sum._sum.points || 0 },
         })
       }
     })

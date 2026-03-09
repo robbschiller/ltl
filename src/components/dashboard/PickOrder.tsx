@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { UserIcon, LockIcon, CheckCircleIcon, ClockIcon } from 'lucide-react'
 import { useGame } from '@/contexts/GameContext'
 import { getTopScorerIds } from '@/lib/gameSimulator'
@@ -13,6 +13,8 @@ interface PickOrderProps {
 
 export function PickOrder({ currentUserId, roster }: PickOrderProps) {
   const [activeTab, setActiveTab] = useState<'picks' | 'roster'>('picks')
+  const [queuedPicksByGame, setQueuedPicksByGame] = useState<Record<string, string>>({})
+  const isSubmittingQueuedPickRef = useRef(false)
   const {
     currentGame,
     currentPicks,
@@ -37,20 +39,7 @@ export function PickOrder({ currentUserId, roster }: PickOrderProps) {
         totalScore,
       }
     })
-  }, [users, currentPicks, currentGame, isGameCompleted, userScores])
-
-  const handlePickChange = (userId: string, value: string) => {
-    if (!currentGame || isGameCompleted || picksLocked) return
-
-    if (value === 'team') {
-      makePick(userId, 'team')
-    } else {
-      const player = roster.find((p) => p.id === value)
-      if (player) {
-        makePick(userId, value, player.position)
-      }
-    }
-  }
+  }, [users, currentPicks, currentGame, userScores])
 
   // Find the first user without a pick
   const currentPickerIndex = usersWithPicks.findIndex((user) => !user.pick)
@@ -91,14 +80,99 @@ export function PickOrder({ currentUserId, roster }: PickOrderProps) {
 
   const isLoneWolf = (playerId: string) => !topScorerIds.has(playerId)
 
+  const queuedPick = currentGame?.id ? queuedPicksByGame[currentGame.id] || '' : ''
+  const setQueuedPick = (value: string) => {
+    if (!currentGame?.id) return
+    setQueuedPicksByGame((prev) => {
+      if (!value) {
+        const next = { ...prev }
+        delete next[currentGame.id]
+        return next
+      }
+      return {
+        ...prev,
+        [currentGame.id]: value,
+      }
+    })
+  }
+
   // Roster already comes with stats from the API, sorted by points
   // Just ensure we have the right type
   const rosterWithStats = roster.map((player) => ({
     ...player,
-    goals: (player as any).goals || 0,
-    assists: (player as any).assists || 0,
-    points: (player as any).points || 0,
+    goals: player.goals ?? 0,
+    assists: player.assists ?? 0,
+    points: player.points ?? 0,
   }))
+
+  const queuedPickIsAvailable = (() => {
+    if (!queuedPick) return false
+    if (queuedPick === 'team') return !teamPicked
+    if (pickedPlayerIds.includes(queuedPick)) return false
+    if (goaliePicked && goalieIds.includes(queuedPick)) return false
+    return true
+  })()
+
+  const submitPickValue = useCallback(async (userId: string, value: string) => {
+    if (!currentGame || isGameCompleted || picksLocked) return false
+
+    if (value === 'team') {
+      return makePick(userId, 'team')
+    }
+
+    const player = roster.find((p) => p.id === value)
+    if (!player) return false
+    return makePick(userId, value, player.position)
+  }, [currentGame, isGameCompleted, picksLocked, makePick, roster])
+
+  const handlePickChange = (userId: string, value: string) => {
+    void submitPickValue(userId, value)
+  }
+
+  useEffect(() => {
+    const isCurrentUserTurn = currentPicker?.id === currentUserId
+    const currentUserHasPick = usersWithPicks.some(
+      (user) => user.id === currentUserId && Boolean(user.pick),
+    )
+
+    if (
+      !currentGame ||
+      !queuedPick ||
+      !isCurrentUserTurn ||
+      currentUserHasPick ||
+      isGameCompleted ||
+      picksLocked ||
+      !queuedPickIsAvailable ||
+      isSubmittingQueuedPickRef.current
+    ) {
+      return
+    }
+
+    isSubmittingQueuedPickRef.current = true
+    void submitPickValue(currentUserId, queuedPick)
+      .then((success) => {
+        if (!success || !currentGame?.id) return
+        setQueuedPicksByGame((prev) => {
+          const next = { ...prev }
+          delete next[currentGame.id]
+          return next
+        })
+      })
+      .finally(() => {
+        isSubmittingQueuedPickRef.current = false
+      })
+  }, [
+    currentGame,
+    queuedPick,
+    currentPicker,
+    currentUserId,
+    usersWithPicks,
+    isGameCompleted,
+    picksLocked,
+    queuedPickIsAvailable,
+    currentGame?.id,
+    submitPickValue,
+  ])
 
   return (
     <div className="backdrop-blur-xl bg-white/5 p-8 rounded-3xl border border-white/10 shadow-2xl relative">
@@ -238,6 +312,15 @@ export function PickOrder({ currentUserId, roster }: PickOrderProps) {
                         <p className="text-sm text-gray-500 mt-1">
                           Waiting for turn...
                         </p>
+                      ) : !user.pick &&
+                        isCurrentUser &&
+                        !isCurrentPicker &&
+                        !isGameCompleted &&
+                        !picksLocked ? (
+                        <p className="text-sm text-amber-300 mt-1">
+                          Potential pick: {queuedPick || 'Not set'}
+                          {queuedPick && !queuedPickIsAvailable ? ' (Unavailable now)' : ''}
+                        </p>
                       ) : isCurrentPicker && !isGameCompleted ? (
                         <p className="text-sm text-red-300 mt-1">
                           {isCurrentUser
@@ -277,6 +360,38 @@ export function PickOrder({ currentUserId, roster }: PickOrderProps) {
                       </select>
                     </div>
                   )}
+                  {!user.pick &&
+                    isCurrentUser &&
+                    !isCurrentPicker &&
+                    !isGameCompleted &&
+                    !picksLocked && (
+                      <div className="w-64">
+                        <select
+                          value={queuedPick}
+                          onChange={(e) => setQueuedPick(e.target.value)}
+                          className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/20 transition-all"
+                        >
+                          <option value="" className="bg-gray-900">
+                            Set potential pick...
+                          </option>
+                          {!teamPicked && (
+                            <option value="team" className="bg-gray-900">
+                              The Team
+                            </option>
+                          )}
+                          {availableRoster.map((player) => (
+                            <option
+                              key={player.id}
+                              value={player.id}
+                              className="bg-gray-900"
+                            >
+                              #{player.number} {player.name} ({player.position})
+                              {isLoneWolf(player.id) ? ' — Lone Wolf' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                 </div>
               </div>
             )
@@ -294,7 +409,10 @@ export function PickOrder({ currentUserId, roster }: PickOrderProps) {
           </div>
 
           {/* Player Rows - Already sorted by points from API */}
-          {rosterWithStats.map((player) => (
+          {rosterWithStats.map((player) => {
+            const impliedOdds = 100 + Math.min(300, (player.points ?? 0) * 8 + (player.goals ?? 0) * 4)
+            const isValuePick = isLoneWolf(player.id)
+            return (
               <div
                 key={player.id}
                 className="backdrop-blur-xl bg-white/5 p-5 rounded-2xl border border-white/10 hover:bg-white/10 transition-all"
@@ -330,19 +448,19 @@ export function PickOrder({ currentUserId, roster }: PickOrderProps) {
                   <div className="w-24 text-center">
                     <span
                       className={`text-sm font-semibold ${
-                        Math.random() > 0.5 ? 'text-green-400' : 'text-red-400'
+                        isValuePick ? 'text-green-400' : 'text-red-400'
                       }`}
                     >
-                      {Math.random() > 0.5 ? '+' : '-'}
-                      {Math.floor(Math.random() * 200 + 100)}
+                      {isValuePick ? '+' : '-'}
+                      {impliedOdds}
                     </span>
                   </div>
                 </div>
               </div>
-            ))}
+            )
+          })}
         </div>
       )}
     </div>
   )
 }
-

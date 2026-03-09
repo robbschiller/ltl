@@ -21,7 +21,7 @@ interface GameContextType {
   picksLocked: boolean
   
   // Actions
-  makePick: (userId: string, playerId: string | 'team', playerPosition?: string) => Promise<void>
+  makePick: (userId: string, playerId: string | 'team', playerPosition?: string) => Promise<boolean>
   refreshGameData: () => Promise<void>
 }
 
@@ -46,6 +46,12 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [userScores, setUserScores] = useState<Map<string, number>>(new Map())
   const [users, setUsers] = useState<User[]>([])
   const [picksLocked, setPicksLocked] = useState(false)
+  type ApiUser = {
+    id: string
+    name: string
+    email?: string
+    totalSeasonPoints?: number
+  }
   
   // Function to fetch users from database
   const fetchUsers = useCallback(async () => {
@@ -55,11 +61,12 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         const data = await response.json()
         console.log('Fetched users:', data.users?.length || 0)
         if (data.users && Array.isArray(data.users)) {
-          setUsers(data.users.map((u: any) => ({ id: u.id, name: u.name, email: u.email })))
+          const apiUsers = data.users as ApiUser[]
+          setUsers(apiUsers.map((u) => ({ id: u.id, name: u.name, email: u.email })))
           
           // Also update userScores from database
           const scoresMap = new Map<string, number>()
-          data.users.forEach((u: any) => {
+          apiUsers.forEach((u) => {
             if (u.totalSeasonPoints) {
               scoresMap.set(u.id, u.totalSeasonPoints)
             }
@@ -83,9 +90,22 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       throw new Error('Failed to fetch current game')
     }
     const data = await response.json()
-    setCurrentGame(data.game)
+    const normalizedGame = data.game
+      ? {
+          ...data.game,
+          gameState: data.gameState || undefined,
+          period: data.period ?? undefined,
+          clock: data.clock || undefined,
+          inIntermission:
+            typeof data.inIntermission === 'boolean'
+              ? data.inIntermission
+              : undefined,
+        }
+      : null
+
+    setCurrentGame(normalizedGame)
     setPicksLocked(Boolean(data.picksLocked))
-    return data.game as Game
+    return normalizedGame as Game
   }, [])
 
   const fetchPicks = useCallback(async (gameId: string) => {
@@ -136,7 +156,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   const makePick = useCallback(
     async (userId: string, playerId: string | 'team', playerPosition?: string) => {
-      if (!currentGame || picksLocked) return
+      if (!currentGame || picksLocked) return false
 
       const response = await fetch('/api/picks', {
         method: 'POST',
@@ -152,11 +172,12 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       if (!response.ok) {
         const errorText = await response.text()
         console.error('Failed to save pick:', errorText)
-        return
+        return false
       }
 
       await fetchPicks(currentGame.id)
       await fetchCurrentGame()
+      return true
     },
     [currentGame, picksLocked, fetchPicks, fetchCurrentGame],
   )
@@ -177,4 +198,3 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>
 }
-

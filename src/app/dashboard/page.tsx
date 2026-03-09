@@ -1,10 +1,11 @@
 "use client"
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { useGame } from '@/contexts/GameContext'
 import { NextGame } from '@/components/dashboard/NextGame'
+import { CurrentGame } from '@/components/dashboard/CurrentGame'
 import { PickOrder } from '@/components/dashboard/PickOrder'
 import { GameResults } from '@/components/dashboard/GameResults'
 import { AdminControls } from '@/components/dashboard/AdminControls'
@@ -68,10 +69,29 @@ export default function Dashboard() {
 
   // Check if all users have made picks
   const allPicksMade = Boolean(currentGame && picksLocked)
+  const hasGameStarted = useMemo(() => {
+    if (!currentGame?.startTimeUTC) return false
+    const startTime = new Date(currentGame.startTimeUTC).getTime()
+    if (Number.isNaN(startTime)) return false
+    return Date.now() >= startTime
+  }, [currentGame?.startTimeUTC])
+  const showCurrentGameView = Boolean(
+    currentGame && picksLocked && hasGameStarted && currentGame.status !== 'completed',
+  )
 
   const handleManualRefresh = async () => {
     await refreshGameData()
   }
+
+  useEffect(() => {
+    if (!showCurrentGameView) return
+
+    const intervalId = window.setInterval(() => {
+      refreshGameData()
+    }, 30000)
+
+    return () => window.clearInterval(intervalId)
+  }, [showCurrentGameView, refreshGameData])
 
 
   if (isLoading || !currentGame) {
@@ -105,13 +125,22 @@ export default function Dashboard() {
         <div className="backdrop-blur-xl bg-white/5 p-6 rounded-3xl border border-white/10 shadow-2xl mb-8">
           <div className="flex items-center justify-between gap-4">
             <div className="flex-1">
-              {currentGame?.status === 'upcoming' && (
+              {(currentGame?.status === 'upcoming' || currentGame?.status === 'live') &&
+                !showCurrentGameView && (
                 <div>
                   <p className="text-white font-semibold mb-1">Ready for Picks?</p>
                   <p className="text-sm text-gray-400">
                     {allPicksMade
                       ? 'All picks are in! Results will finalize when the game ends.'
                       : `${users.length - currentPicks.filter((p) => p.gameId === currentGame?.id).length} pick(s) remaining.`}
+                  </p>
+                </div>
+              )}
+              {showCurrentGameView && (
+                <div>
+                  <p className="text-white font-semibold mb-1">Game in Progress</p>
+                  <p className="text-sm text-gray-400">
+                    Picks are locked. Scores will post when the game ends.
                   </p>
                 </div>
               )}
@@ -125,7 +154,7 @@ export default function Dashboard() {
               )}
             </div>
             <div className="flex gap-3">
-              {currentGame?.status === 'upcoming' && (
+              {(currentGame?.status === 'upcoming' || currentGame?.status === 'live') && (
                 <button
                   onClick={handleManualRefresh}
                   className="px-6 py-3 rounded-xl font-semibold transition-all flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white shadow-lg shadow-gray-500/20"
@@ -161,6 +190,26 @@ export default function Dashboard() {
           />
         )}
 
+        {/* Current Game */}
+        {showCurrentGameView &&
+          (isLoadingRoster ? (
+            <div className="backdrop-blur-xl bg-white/5 p-8 rounded-3xl border border-white/10 shadow-2xl">
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600 mx-auto"></div>
+                <p className="mt-4 text-gray-300">Loading roster...</p>
+              </div>
+            </div>
+          ) : (
+            currentGame && (
+              <CurrentGame
+                game={currentGame}
+                picks={currentPicks}
+                users={users}
+                roster={roster}
+              />
+            )
+          ))}
+
         {/* Game Results */}
         {latestGameResult && latestCompletedGame && (
           <GameResults
@@ -174,18 +223,18 @@ export default function Dashboard() {
         )}
 
         {/* Pick Order */}
-        {isLoadingRoster ? (
-          <div className="backdrop-blur-xl bg-white/5 p-8 rounded-3xl border border-white/10 shadow-2xl">
-            <div className="text-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600 mx-auto"></div>
-              <p className="mt-4 text-gray-300">Loading roster...</p>
+        {!showCurrentGameView &&
+          (isLoadingRoster ? (
+            <div className="backdrop-blur-xl bg-white/5 p-8 rounded-3xl border border-white/10 shadow-2xl">
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600 mx-auto"></div>
+                <p className="mt-4 text-gray-300">Loading roster...</p>
+              </div>
             </div>
-          </div>
-        ) : (
-          <PickOrder currentUserId={currentUser?.uid || ''} roster={roster} />
-        )}
+          ) : (
+            <PickOrder currentUserId={currentUser?.uid || ''} roster={roster} />
+          ))}
       </div>
     </div>
   )
 }
-
