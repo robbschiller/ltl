@@ -3,8 +3,7 @@
 import React, { useMemo } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
-import { calculatePlayerScore, getTopScorerIds } from '@/lib/gameSimulator'
-import { findPlayerStats } from '@/lib/playerUtils'
+import { calculatePlayerScore, calculateUserScores, getTopScorerIds } from '@/lib/gameSimulator'
 import type { Player, Game, GameResult, UserPick } from '@/lib/types'
 
 export default function PastGameDetailPage() {
@@ -123,29 +122,8 @@ export default function PastGameDetailPage() {
       return new Map<string, number>()
     }
 
-    const scores = new Map<string, number>()
-
-    picks.forEach((pick) => {
-      if (pick.playerId === 'team') {
-        scores.set(pick.userId, gameResult.teamPoints)
-      } else {
-        const player = roster.find((p) => p.id === pick.playerId)
-        if (player) {
-          const playerStats = findPlayerStats(player, gameResult.playerStats)
-          if (playerStats) {
-            const isLoneWolf = !topScorerIds.has(player.id)
-            scores.set(pick.userId, calculatePlayerScore(playerStats, game, { isLoneWolf }))
-          } else {
-            scores.set(pick.userId, 0)
-          }
-        } else {
-          scores.set(pick.userId, 0)
-        }
-      }
-    })
-
-    return scores
-  }, [game, gameResult, picks, roster, topScorerIds])
+    return calculateUserScores(picks, gameResult, roster, game)
+  }, [game, gameResult, picks, roster])
 
   if (isLoading) {
     return (

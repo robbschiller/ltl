@@ -1,4 +1,5 @@
 import type { GameResult, GamePlayerStats, Game, Player } from './types'
+import { calculateTeamScore } from './gameSimulator'
 
 type TeamSide = 'homeTeam' | 'awayTeam'
 
@@ -508,8 +509,8 @@ export function parseRealGameResults(
   game.shootoutOccurred = shootoutOccurred
   game.emptyNetGoals = emptyNetGoals
   
-  // Calculate team points (1 point per goal past 3)
-  const teamPoints = game.teamGoals > 3 ? game.teamGoals : 0
+  // Calculate team points using centralized scoring rules
+  const teamPoints = calculateTeamScore(game.teamGoals)
   
   return {
     gameId: game.id,

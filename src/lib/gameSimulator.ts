@@ -177,6 +177,7 @@ export function calculateUserScores(
 ): Map<string, number> {
   const userScores = new Map<string, number>()
   const topScorerIds = getTopScorerIds(roster)
+  const teamScore = calculateTeamScore(game.teamGoals)
 
   if (process.env.NODE_ENV === 'development') {
     console.log('[CALCULATE-USER-SCORES] Starting calculation:', {
@@ -189,7 +190,7 @@ export function calculateUserScores(
   picks.forEach((pick) => {
     if (pick.playerId === 'team') {
       // Team pick
-      userScores.set(pick.userId, gameResult.teamPoints)
+      userScores.set(pick.userId, teamScore)
     } else {
       // Player pick - find matching player stats using shared utility
       const rosterPlayer = roster.find((p) => p.id === pick.playerId)

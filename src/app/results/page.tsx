@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useGame } from '@/contexts/GameContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { TrophyIcon, ArrowLeftIcon, TargetIcon } from 'lucide-react'
-import { calculatePlayerScore, getTopScorerIds } from '@/lib/gameSimulator'
+import { calculatePlayerScore, calculateUserScores, getTopScorerIds } from '@/lib/gameSimulator'
 import { findPlayerStats } from '@/lib/playerUtils'
 import type { Player } from '@/lib/types'
 
@@ -58,53 +58,9 @@ export default function ResultsPage() {
     if (!gameResult || !completedGame || gamePicks.length === 0) {
       return new Map<string, number>()
     }
-    
-    const scores = new Map<string, number>()
-    
-    gamePicks.forEach((pick) => {
-      if (pick.playerId === 'team') {
-        // Team pick - use teamPoints from gameResult
-        scores.set(pick.userId, gameResult.teamPoints)
-      } else {
-        // Player pick - find the player stats using the same matching logic as player stats area
-        const player = roster.find((p) => p.id === pick.playerId)
-        
-        if (player) {
-          // Use shared utility to find player stats
-          const playerStats = findPlayerStats(player, gameResult.playerStats)
-          
-          if (playerStats) {
-            // Use the exact same calculation as the player stats area
-            const isLoneWolf = !topScorerIds.has(player.id)
-            const points = calculatePlayerScore(playerStats, completedGame, { isLoneWolf })
-            scores.set(pick.userId, points)
-            
-            // Only log in development
-            if (process.env.NODE_ENV === 'development') {
-              console.log(`[RESULTS] User ${pick.userId} picked ${player.name}:`, {
-                goals: playerStats.goals.length,
-                assists: playerStats.assists.length,
-                position: playerStats.position,
-                points,
-              })
-            }
-          } else {
-            if (process.env.NODE_ENV === 'development') {
-              console.warn(`[RESULTS] No stats found for picked player ${player.name} (${pick.playerId})`)
-            }
-            scores.set(pick.userId, 0)
-          }
-        } else {
-          if (process.env.NODE_ENV === 'development') {
-            console.warn(`[RESULTS] Picked player not found in roster: ${pick.playerId}`)
-          }
-          scores.set(pick.userId, 0)
-        }
-      }
-    })
-    
-    return scores
-  }, [gameResult, completedGame, gamePicks, roster, topScorerIds])
+
+    return calculateUserScores(gamePicks, gameResult, roster, completedGame)
+  }, [gameResult, completedGame, gamePicks, roster])
 
   // Debug logging - only log if there's an issue
   React.useEffect(() => {
